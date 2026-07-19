@@ -1,0 +1,119 @@
+services:
+
+  mysql:
+    image: mysql:8.0
+    container_name: diy-mysql
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: "DiyBangle@2024"
+      MYSQL_DATABASE: diy_bangle
+    volumes:
+      - mysql-data:/var/lib/mysql
+    command:
+      --max-connections=100
+      --innodb-buffer-pool-size=128M
+      --innodb-log-buffer-size=8M
+      --key-buffer-size=16M
+      --tmp-table-size=16M
+      --max-heap-table-size=16M
+      --table-open-cache=64
+      --table-definition-cache=64
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pDiyBangle@2024"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - diy-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: diy-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - diy-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: diy-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - diy-network
+
+  diy-bangle-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: diy-bangle-app
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      JAVA_OPTS: >-
+        -Xms128m
+        -Xmx384m
+        -XX:+UseG1GC
+        -XX:MaxGCPauseMillis=200
+        -XX:MaxRAMPercentage=75.0
+        -XX:+UseStringDeduplication
+        -XX:+ParallelRefProcEnabled
+        -Djava.security.egd=file:/dev/./urandom
+    volumes:
+      - ./app.jar:/app/app.jar
+      - ./certs:/app/certs
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - diy-network
+
+volumes:
+  mysql-data:
+  redis-data:
+  minio-data:
+
+networks:
+  diy-network:
+    driver: bridge

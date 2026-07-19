@@ -1,0 +1,560 @@
+package com.diy.service.impl;
+
+import com.alibaba.fastjson.JSONObject;
+import com.github.pagehelper.Page;
+import com.github.pagehelper.PageHelper;
+import com.diy.constant.MessageConstant;
+import com.diy.context.BaseContext;
+import com.diy.dto.*;
+import com.diy.entity.*;
+import com.diy.exception.OrderBusinessException;
+import com.diy.exception.ShoppingCartBusinessException;
+import com.diy.mapper.*;
+import com.diy.result.PageResult;
+import com.diy.service.CartItemService;
+import com.diy.service.OrderService;
+import com.diy.utils.WeChatPayUtil;
+import com.diy.vo.OrderCreateVO;
+import com.diy.vo.OrderPaymentVO;
+import com.diy.vo.OrderSubmitVO;
+import com.diy.vo.OrderVO;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * 
+ */
+@Slf4j
+@Service
+public class OrderServiceImpl implements OrderService {
+    @Autowired
+    private OrderMapper orderMapper;
+    @Autowired
+    private OrderDetailMapper orderDetailMapper;
+    @Autowired
+    private ShoppingCartMapper shoppingCartMapper;
+    @Autowired
+    private ProductMapper productMapper;
+    @Autowired
+    private WeChatPayUtil weChatPayUtil;
+    @Autowired
+    private UserMapper userMapper;
+    @Autowired
+    private CartItemService cartItemService;
+
+    @Value("${dev.mock-payment:true}")
+    private Boolean mockPayment;
+
+    /**
+     * 
+     */
+    @Transactional
+    @Override
+    public OrderSubmitVO submitOrder(OrdersSubmitDTO ordersSubmitDTO) {
+        Long userId = BaseContext.getCurrentId();
+
+        // 1. 
+        CartItem cartItemQuery = CartItem.builder()
+                .userId(userId)
+                .build();
+        List<CartItem> cartItems = shoppingCartMapper.list(cartItemQuery);
+
+        // 2. 
+        if (cartItems == null || cartItems.isEmpty()) {
+            throw new ShoppingCartBusinessException(MessageConstant.SHOPPING_CART_IS_NULL);
+        }
+
+        // 3. 
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        List<OrderItem> orderItems = new ArrayList<>();
+
+        for (CartItem cartItem : cartItems) {
+            Long productId = cartItem.getProductId();
+            Integer quantity = cartItem.getQuantity();
+
+            Product product = productMapper.getById(productId);
+            if (product == null) {
+                throw new OrderBusinessException(MessageConstant.PRODUCT_NOT_FOUND);
+            }
+
+            BigDecimal itemAmount = product.getPrice().multiply(new BigDecimal(quantity));
+            totalAmount = totalAmount.add(itemAmount);
+
+            OrderItem orderItem = OrderItem.builder()
+                    .productId(productId)
+                    .title(product.getTitle())
+                    .price(product.getPrice())
+                    .quantity(quantity)
+                    .build();
+            orderItems.add(orderItem);
+        }
+
+        // 4. 
+        String orderNo = "OD" + System.currentTimeMillis();
+
+        // 5. 
+        Orders order = Orders.builder()
+                .userId(userId)
+                .orderNo(orderNo)
+                .amount(totalAmount)
+                .status(Orders.PENDING_PAYMENT)
+                .createTime(LocalDateTime.now())
+                .build();
+
+        orderMapper.insert(order);
+        Long orderId = order.getId();
+
+        // 6. 
+        for (OrderItem orderItem : orderItems) {
+            orderItem.setOrderId(orderId);
+        }
+        orderDetailMapper.insertBatch(orderItems);
+
+        // 7. 
+        shoppingCartMapper.deleteByUserId(userId);
+
+        // 8. 
+        return OrderSubmitVO.builder()
+                .id(orderId)
+                .orderNumber(orderNo)
+                .orderAmount(totalAmount)
+                .orderTime(order.getCreateTime())
+                .build();
+    }
+
+    /**
+     * 
+     */
+    @Transactional
+    @Override
+    public OrderCreateVO createOrderFromCart() {
+        Long userId = BaseContext.getCurrentId();
+
+        // 1. 
+        CartItem cartItemQuery = CartItem.builder()
+                .userId(userId)
+                .build();
+        List<CartItem> cartItems = shoppingCartMapper.list(cartItemQuery);
+
+        // 2. 
+        if (cartItems == null || cartItems.isEmpty()) {
+            throw new OrderBusinessException(MessageConstant.SHOPPING_CART_IS_NULL);
+        }
+
+        // 3. 
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        List<OrderItem> orderItems = new ArrayList<>();
+
+        for (CartItem cartItem : cartItems) {
+            Long productId = cartItem.getProductId();
+            Integer quantity = cartItem.getQuantity();
+
+            Product product = productMapper.getById(productId);
+            if (product == null) {
+                throw new OrderBusinessException(MessageConstant.PRODUCT_NOT_FOUND);
+            }
+
+            BigDecimal itemAmount = product.getPrice().multiply(new BigDecimal(quantity));
+            totalAmount = totalAmount.add(itemAmount);
+
+            OrderItem orderItem = OrderItem.builder()
+                    .productId(productId)
+                    .title(product.getTitle())
+                    .price(product.getPrice())
+                    .quantity(quantity)
+                    .build();
+            orderItems.add(orderItem);
+        }
+
+        // 4. 
+        String orderNo = "OD" + System.currentTimeMillis();
+
+        // 5. 
+        Orders order = Orders.builder()
+                .userId(userId)
+                .orderNo(orderNo)
+                .amount(totalAmount)
+                .status(Orders.PENDING_PAYMENT)
+                .createTime(LocalDateTime.now())
+                .build();
+
+        orderMapper.insert(order);
+        Long orderId = order.getId();
+
+        // 6. 保存订单项
+        for (OrderItem orderItem : orderItems) {
+            orderItem.setOrderId(orderId);
+        }
+        orderDetailMapper.insertBatch(orderItems);
+
+        // 7. 清空购物车
+        shoppingCartMapper.deleteByUserId(userId);
+
+        // 8. 构建返回结果
+        OrderCreateVO.Order orderVO = OrderCreateVO.Order.builder()
+                .orderId(orderId)
+                .orderNo(orderNo)
+                .amount(totalAmount)
+                .status(Orders.PENDING_PAYMENT)
+                .build();
+
+        return OrderCreateVO.builder()
+                .order(orderVO)
+                .build();
+    }
+
+    /**
+     * 订单支付
+     */
+    public OrderPaymentVO payment(OrdersPaymentDTO ordersPaymentDTO) throws Exception {
+        Long userId = BaseContext.getCurrentId();
+        log.info("开始处理支付，用户ID: {}, 订单号: {}", userId, ordersPaymentDTO.getOrderNumber());
+
+        User user = userMapper.getById(userId);
+        if (user == null) {
+            log.error("用户不存在，用户ID: {}", userId);
+            throw new RuntimeException("用户不存在");
+        }
+
+        log.info("用户信息: id={}, nickname={}, openid={}", user.getId(), user.getNickname(),
+                user.getOpenid() != null ? user.getOpenid() : "null");
+
+        Orders ordersDB = orderMapper.getByNumberAndUserId(ordersPaymentDTO.getOrderNumber(), userId);
+        if (ordersDB == null) {
+            log.error("订单不存在，订单号: {}, 用户ID: {}", ordersPaymentDTO.getOrderNumber(), userId);
+            throw new RuntimeException("订单不存在");
+        }
+
+        log.info("订单信息: id={}, orderNo={}, amount={}, status={}", ordersDB.getId(), ordersDB.getOrderNo(),
+                ordersDB.getAmount(), ordersDB.getStatus());
+
+        if (Boolean.TRUE.equals(mockPayment)) {
+            log.info("【开发模式】使用模拟支付");
+
+            OrderPaymentVO vo = OrderPaymentVO.builder()
+                    .nonceStr("test_nonce_str")
+                    .paySign("test_pay_sign")
+                    .timeStamp(String.valueOf(System.currentTimeMillis() / 1000))
+                    .signType("RSA")
+                    .packageStr("prepay_id=test_prepay_id")
+                    .build();
+
+            LocalDateTime now = LocalDateTime.now();
+            Orders orders = Orders.builder()
+                    .id(ordersDB.getId())
+                    .status(Orders.PAID)
+                    .payTime(now)
+                    .updateTime(now)
+                    .transactionId("MOCK-" + ordersDB.getOrderNo())
+                    .build();
+            orderMapper.update(orders);
+
+            log.info("模拟支付完成");
+            return vo;
+        }
+
+        log.info("【生产模式】调用真实微信支付API");
+
+        if (user.getOpenid() == null || user.getOpenid().isEmpty()) {
+            log.error("用户openid为空，无法发起微信支付");
+            throw new RuntimeException("用户未绑定微信，请重新登录");
+        }
+
+        try {
+            log.info("开始调用微信支付接口...");
+            JSONObject jsonObject = weChatPayUtil.pay(
+                    ordersPaymentDTO.getOrderNumber(),
+                    ordersDB.getAmount(),
+                    "商品购买",
+                    user.getOpenid()
+            );
+
+            log.info("微信支付接口调用成功，返回数据: {}", jsonObject);
+
+            return OrderPaymentVO.builder()
+                    .nonceStr(jsonObject.getString("nonceStr"))
+                    .paySign(jsonObject.getString("paySign"))
+                    .timeStamp(jsonObject.getString("timeStamp"))
+                    .signType(jsonObject.getString("signType"))
+                    .packageStr(jsonObject.getString("package"))
+                    .build();
+        } catch (Exception e) {
+            log.error("微信支付调用失败", e);
+            throw new RuntimeException("微信支付调用失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 支付成功，修改订单状态（幂等性处理）
+     */
+    @Transactional
+    @Override
+    public void paySuccess(String outTradeNo, String transactionId) {
+        log.info("处理支付成功回调，订单号: {}", outTradeNo);
+
+        Orders ordersDB = orderMapper.getByNumber(outTradeNo);
+        if (ordersDB == null) {
+            log.error("订单不存在，订单号: {}", outTradeNo);
+            throw new OrderBusinessException(MessageConstant.ORDER_NOT_FOUND);
+        }
+
+        if (Orders.PAID.equals(ordersDB.getStatus()) ||
+                Orders.SHIPPED.equals(ordersDB.getStatus()) ||
+                Orders.COMPLETED.equals(ordersDB.getStatus())) {
+            log.warn("订单已处于支付后状态，忽略本次回调，订单号: {}, 当前状态: {}", outTradeNo, ordersDB.getStatus());
+            return;
+        }
+
+        if (!Orders.PENDING_PAYMENT.equals(ordersDB.getStatus())) {
+            log.error("订单状态不正确，无法支付，订单号: {}, 当前状态: {}", outTradeNo, ordersDB.getStatus());
+            throw new OrderBusinessException("订单状态异常，无法完成支付");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        Orders orders = Orders.builder()
+                .id(ordersDB.getId())
+                .status(Orders.PAID)
+                .payTime(now)
+                .updateTime(now)
+                .transactionId(transactionId)
+                .build();
+        orderMapper.update(orders);
+
+        log.info("支付成功回调处理完成，订单号: {}, 微信交易号: {}", outTradeNo, transactionId);
+    }
+
+    /**
+     * 用户端分页查询订单
+     */
+    @Override
+    public PageResult pageQuery4User(OrdersPageQueryDTO ordersPageQueryDTO) {
+        PageHelper.startPage(ordersPageQueryDTO.getPage(), ordersPageQueryDTO.getPageSize());
+        Page<Orders> page = orderMapper.pageQuery(ordersPageQueryDTO);
+
+        List<OrderVO> list = new ArrayList<>();
+        if (page != null && page.getTotal() > 0) {
+            for (Orders orders : page) {
+                Long orderId = orders.getId();
+                List<OrderItem> orderItems = orderDetailMapper.getByOrderId(orderId);
+
+                OrderVO orderVO = new OrderVO();
+                BeanUtils.copyProperties(orders, orderVO);
+                orderVO.setOrderItems(orderItems);
+                list.add(orderVO);
+            }
+        }
+        return new PageResult(page.getTotal(), list);
+    }
+
+    /**
+     * 分页查询订单列表（新接口）
+     */
+    @Override
+    public PageResult listOrders(OrdersPageQueryDTO ordersPageQueryDTO) {
+        Long userId = BaseContext.getCurrentId();
+        ordersPageQueryDTO.setUserId(userId);
+
+        PageHelper.startPage(ordersPageQueryDTO.getPage(), ordersPageQueryDTO.getPageSize());
+        Page<Orders> page = orderMapper.pageQuery(ordersPageQueryDTO);
+
+        return new PageResult(page.getTotal(), page.getResult());
+    }
+
+    /**
+     * 条件搜索
+     */
+    @Override
+    public PageResult conditionSearch(OrdersPageQueryDTO ordersPageQueryDTO) {
+        PageHelper.startPage(ordersPageQueryDTO.getPage(), ordersPageQueryDTO.getPageSize());
+        Page<Orders> page = orderMapper.pageQuery(ordersPageQueryDTO);
+
+        List<OrderVO> orderVOList = new ArrayList<>();
+        List<Orders> ordersList = page.getResult();
+        
+        if (!CollectionUtils.isEmpty(ordersList)) {
+            for (Orders orders : ordersList) {
+                OrderVO orderVO = new OrderVO();
+                BeanUtils.copyProperties(orders, orderVO);
+                
+                // 查询订单明细
+                List<OrderItem> orderItems = orderDetailMapper.getByOrderId(orders.getId());
+                orderVO.setOrderItems(orderItems);
+                orderVOList.add(orderVO);
+    }
+
+    if (Orders.PAID.equals(ordersDB.getStatus()) ||
+            Orders.SHIPPED.equals(ordersDB.getStatus()) ||
+            Orders.COMPLETED.equals(ordersDB.getStatus())) {
+        log.warn("订单已处于支付后状态，忽略本次回调，订单号: {}, 当前状态: {}", outTradeNo, ordersDB.getStatus());
+        return;
+    }
+
+    if (!Orders.PENDING_PAYMENT.equals(ordersDB.getStatus())) {
+        log.error("订单状态不正确，无法支付，订单号: {}, 当前状态: {}", outTradeNo, ordersDB.getStatus());
+        throw new OrderBusinessException("订单状态异常，无法完成支付");
+    }
+
+    LocalDateTime now = LocalDateTime.now();
+    Orders orders = Orders.builder()
+            .id(ordersDB.getId())
+            .status(Orders.PAID)
+            .payTime(now)
+            .updateTime(now)
+            .transactionId(transactionId)
+            .build();
+    orderMapper.update(orders);
+
+    log.info("支付成功回调处理完成，订单号: {}, 微信交易号: {}", outTradeNo, transactionId);
+}
+
+/**
+ * 用户端分页查询订单
+ */
+@Override
+public PageResult pageQuery4User(OrdersPageQueryDTO ordersPageQueryDTO) {
+    PageHelper.startPage(ordersPageQueryDTO.getPage(), ordersPageQueryDTO.getPageSize());
+    Page<Orders> page = orderMapper.pageQuery(ordersPageQueryDTO);
+
+    List<OrderVO> list = new ArrayList<>();
+    if (page != null && page.getTotal() > 0) {
+        for (Orders orders : page) {
+            Long orderId = orders.getId();
+            List<OrderItem> orderItems = orderDetailMapper.getByOrderId(orderId);
+
+            OrderVO orderVO = new OrderVO();
+            BeanUtils.copyProperties(orders, orderVO);
+            orderVO.setOrderItems(orderItems);
+            list.add(orderVO);
+        }
+    }
+    return new PageResult(page.getTotal(), list);
+}
+
+/**
+ * 分页查询订单列表（新接口）
+ */
+@Override
+public PageResult listOrders(OrdersPageQueryDTO ordersPageQueryDTO) {
+    Long userId = BaseContext.getCurrentId();
+    ordersPageQueryDTO.setUserId(userId);
+
+    PageHelper.startPage(ordersPageQueryDTO.getPage(), ordersPageQueryDTO.getPageSize());
+    Page<Orders> page = orderMapper.pageQuery(ordersPageQueryDTO);
+
+    return new PageResult(page.getTotal(), page.getResult());
+}
+
+/**
+ * 条件搜索
+ */
+@Override
+public PageResult conditionSearch(OrdersPageQueryDTO ordersPageQueryDTO) {
+    PageHelper.startPage(ordersPageQueryDTO.getPage(), ordersPageQueryDTO.getPageSize());
+    Page<Orders> page = orderMapper.pageQuery(ordersPageQueryDTO);
+
+    List<OrderVO> orderVOList = new ArrayList<>();
+    List<Orders> ordersList = page.getResult();
+    
+    if (!CollectionUtils.isEmpty(ordersList)) {
+        for (Orders orders : ordersList) {
+            OrderVO orderVO = new OrderVO();
+            BeanUtils.copyProperties(orders, orderVO);
+            
+            // 查询订单明细
+            List<OrderItem> orderItems = orderDetailMapper.getByOrderId(orders.getId());
+            orderVO.setOrderItems(orderItems);
+            orderVOList.add(orderVO);
+        }
+    }
+    return new PageResult(page.getTotal(), orderVOList);
+}
+
+/**
+ * 发货
+ */
+@Override
+public void delivery(Long id) {
+    Orders order = new Orders();
+    order.setId(id);
+    order.setStatus(Orders.SHIPPED);
+    orderMapper.update(order);
+}
+
+/**
+ * 完成订单
+ */
+@Override
+public void complete(Long id) {
+    Orders order = new Orders();
+    order.setStatus(Orders.COMPLETED);
+    order.setId(id);
+    orderMapper.update(order);
+}
+
+/**
+ * 取消订单
+ */
+@Override
+public void cancel(OrdersCancelDTO ordersCancelDTO) {
+    Long id = ordersCancelDTO.getId();
+    Orders order = new Orders();
+    order.setId(id);
+    order.setStatus(Orders.PENDING_PAYMENT);
+    orderMapper.update(order);
+}
+
+/**
+ * 再来一单
+ */
+@Override
+public void repetition(Long id) {
+    //TODO: 实现再来一单逻辑
+    // 根据id查询订单明细，添加到购物车
+}
+
+/**
+ * 用户催单
+ */
+@Override
+public void reminder(Long id) {
+    Orders order = orderMapper.getDetailsById(id);
+    if (order == null) {
+        throw new OrderBusinessException(MessageConstant.ORDER_NOT_FOUND);
+    }
+    //TODO: 实现催单提醒功能
+}
+
+/**
+ * 更新订单状态
+ * @param orderStatusUpdateDTO 订单状态更新信息
+ */
+@Override
+public void updateStatus(OrderStatusUpdateDTO orderStatusUpdateDTO) {
+    Long orderId = orderStatusUpdateDTO.getOrderId();
+    Integer status = orderStatusUpdateDTO.getStatus();
+    
+    // 查询订单是否存在
+    Orders order = orderMapper.getDetailsById(orderId);
+    if (order == null) {
+        throw new OrderBusinessException(MessageConstant.ORDER_NOT_FOUND);
+    }
+    
+    // 更新订单状态
+    Orders updateOrder = Orders.builder()
+            .id(orderId)
+            .status(status)
+            .build();
+    
+    orderMapper.update(updateOrder);
+}

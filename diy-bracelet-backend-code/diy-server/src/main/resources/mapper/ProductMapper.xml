@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.diy.mapper.ProductMapper">
+
+    <update id="update" parameterType="com.diy.entity.Product">
+        update product
+        <set>
+            <if test="categoryId != null">
+                category_id = #{categoryId},
+            </if>
+            <if test="title != null and title != ''">
+                title = #{title},
+            </if>
+            <if test="description != null and description != ''">
+                description = #{description},
+            </if>
+            <if test="coverImage != null and coverImage != ''">
+                cover_image = #{coverImage},
+            </if>
+            <if test="price != null">
+                price = #{price},
+            </if>
+            <if test="priceOverseas != null">
+                price_overseas = #{priceOverseas},
+            </if>
+            <if test="weight != null">
+                weight = #{weight},
+            </if>
+            <if test="stock != null">
+                stock = #{stock},
+            </if>
+            <if test="status != null">
+                status = #{status},
+            </if>
+        </set>
+        where id = #{id}
+    </update>
+    
+    <select id="pageQuery" resultType="com.diy.entity.Product">
+        select 
+            p.id,
+            p.category_id,
+            c.name as categoryName,
+            p.title,
+            p.description,
+            p.cover_image,
+            p.price,
+            p.price_overseas,
+            p.weight,
+            p.stock,
+            p.status,
+            p.create_time
+        from product p
+        left join category c on p.category_id = c.id
+        <where>
+            <if test="title != null and title != ''">
+                and p.title like concat('%',#{title},'%')
+            </if>
+            <if test="categoryId != null">
+                and p.category_id = #{categoryId}
+            </if>
+            <if test="status != null">
+                and p.status = #{status}
+            </if>
+        </where>
+        order by p.create_time desc
+    </select>
+
+</mapper>

@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.diy.mapper.DiyMaterialMapper">
+
+    <select id="list" resultType="com.diy.entity.DiyMaterial">
+        SELECT id, category_key, color_series_key, title, description, size, color, 
+               price, price_overseas, stock, weight, image_url, real_image_url1, real_image_url2, sort, status, create_time, update_time
+        FROM diy_material
+        WHERE 1=1
+        <if test="categories != null and !categories.isEmpty()">
+            AND category_key IN
+            <foreach collection="categories" item="cat" open="(" separator="," close=")">
+                #{cat}
+            </foreach>
+        </if>
+        <if test="colorSeries != null and !colorSeries.isEmpty()">
+            AND color_series_key IN
+            <foreach collection="colorSeries" item="color" open="(" separator="," close=")">
+                #{color}
+            </foreach>
+        </if>
+        ORDER BY sort ASC, create_time DESC
+    </select>
+
+    <!-- 用户端：材料列表（按名称+尺寸排序，使同名相邻且尺寸有序） -->
+    <select id="listForUser" resultType="com.diy.entity.DiyMaterial">
+        SELECT id, category_key, color_series_key, title, description, size, color,
+               price, price_overseas, stock, weight, image_url, real_image_url1, real_image_url2, sort, status, create_time, update_time
+        FROM diy_material
+        WHERE 1=1
+        <if test="categories != null and !categories.isEmpty()">
+            AND category_key IN
+            <foreach collection="categories" item="cat" open="(" separator="," close=")">
+                #{cat}
+            </foreach>
+        </if>
+        <if test="colorSeries != null and !colorSeries.isEmpty()">
+            AND color_series_key IN
+            <foreach collection="colorSeries" item="color" open="(" separator="," close=")">
+                #{color}
+            </foreach>
+        </if>
+        ORDER BY title ASC,
+                 (size IS NULL) ASC,
+                 size ASC,
+                 sort ASC,
+                 create_time DESC
+    </select>
+    
+    <select id="getById" resultType="com.diy.entity.DiyMaterial">
+        SELECT id, category_key, color_series_key, title, description, size, color, 
+               price, price_overseas, stock, weight, image_url, real_image_url1, real_image_url2, sort, status, create_time, update_time
+        FROM diy_material
+        WHERE id = #{id}
+    </select>
+    
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO diy_material 
+        (category_key, color_series_key, title, description, size, color, 
+         price, price_overseas, stock, weight, image_url, real_image_url1, real_image_url2, sort, status, create_time, update_time)
+        VALUES 
+        (#{categoryKey}, #{colorSeriesKey}, #{title}, #{description}, #{size}, #{color},
+         #{price}, #{priceOverseas}, #{stock}, #{weight}, #{imageUrl}, #{realImageUrl1}, #{realImageUrl2}, #{sort}, #{status}, NOW(), NOW())
+    </insert>
+    
+    <update id="update">
+        UPDATE diy_material
+        SET category_key = #{categoryKey},
+            color_series_key = #{colorSeriesKey},
+            title = #{title},
+            description = #{description},
+            size = #{size},
+            color = #{color},
+            price = #{price},
+            price_overseas = #{priceOverseas},
+            stock = #{stock},
+            weight = #{weight},
+            image_url = #{imageUrl},
+            real_image_url1 = #{realImageUrl1},
+            real_image_url2 = #{realImageUrl2},
+            sort = #{sort},
+            status = #{status},
+            update_time = NOW()
+        WHERE id = #{id}
+    </update>
+    
+    <delete id="delete">
+        DELETE FROM diy_material WHERE id = #{id}
+    </delete>
+    
+    <update id="updateStatus">
+        UPDATE diy_material SET status = #{status}, update_time = NOW() WHERE id = #{id}
+    </update>
+    
+    <!-- 扣减库存（原子操作，仅在库存充足时扣减） -->
+    <update id="deductStock">
+        UPDATE diy_material 
+        SET stock = stock - #{quantity}, 
+            update_time = NOW() 
+        WHERE id = #{materialId} 
+          AND stock >= #{quantity}
+    </update>
+    
+    <!-- 回滚库存 -->
+    <update id="rollbackStock">
+        UPDATE diy_material 
+        SET stock = stock + #{quantity}, 
+            update_time = NOW() 
+        WHERE id = #{materialId}
+    </update>
+
+</mapper>

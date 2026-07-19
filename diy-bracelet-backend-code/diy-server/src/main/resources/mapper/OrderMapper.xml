@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.diy.mapper.OrderMapper">
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+         insert into `order`(
+             user_id, order_no, amount, status, pay_time, create_time, 
+             diy_name, product_image, description,
+             remark,
+             receiver_name, receiver_phone, email, receiver_province, 
+             receiver_city, receiver_district, receiver_detail,
+             tracking_number, is_overseas, paypal_order_id, paypal_capture_id
+         )
+         values(
+             #{userId}, #{orderNo}, #{amount}, #{status}, #{payTime}, #{createTime}, 
+             #{diyName}, #{productImage}, #{description},
+             #{remark},
+             #{receiverName}, #{receiverPhone}, #{email}, #{receiverProvince}, 
+             #{receiverCity}, #{receiverDistrict}, #{receiverDetail},
+             #{trackingNumber}, #{isOverseas}, #{paypalOrderId}, #{paypalCaptureId}
+         )
+     </insert>
+    
+    <update id="update" parameterType="com.diy.entity.Orders">
+        update `order`
+        <set>
+            <if test="status != null">
+                status = #{status},
+            </if>
+            <if test="payTime != null">
+                pay_time = #{payTime},
+            </if>
+            <if test="updateTime != null">
+                update_time = #{updateTime},
+            </if>
+            <if test="transactionId != null">
+                transaction_id = #{transactionId},
+            </if>
+            <!-- prepayId 支持 null 值更新（用于清空预支付ID） -->
+            prepay_id = #{prepayId},
+            <if test="refundId != null">
+                refund_id = #{refundId},
+            </if>
+            <if test="refundAmount != null">
+                refund_amount = #{refundAmount},
+            </if>
+            <if test="refundTime != null">
+                refund_time = #{refundTime},
+            </if>
+            <if test="refundReason != null">
+                refund_reason = #{refundReason},
+            </if>
+            <if test="remark != null">
+                remark = #{remark},
+            </if>
+            <if test="deliveryTime != null">
+                delivery_time = #{deliveryTime},
+            </if>
+            <if test="completeTime != null">
+                complete_time = #{completeTime},
+            </if>
+            <if test="amount != null">
+                amount = #{amount},
+            </if>
+            <if test="productImage != null">
+                product_image = #{productImage},
+            </if>
+            <if test="diyName != null">
+                diy_name = #{diyName},
+            </if>
+            <if test="trackingNumber != null">
+                tracking_number = #{trackingNumber},
+            </if>
+            <if test="email != null">
+                email = #{email},
+            </if>
+            <if test="isOverseas != null">
+                is_overseas = #{isOverseas},
+            </if>
+            <if test="paypalOrderId != null">
+                paypal_order_id = #{paypalOrderId},
+            </if>
+            <if test="paypalCaptureId != null">
+                paypal_capture_id = #{paypalCaptureId},
+            </if>
+        </set>
+        where id = #{id}
+    </update>
+    
+    <select id="pageQuery" resultType="Orders">
+        select * from `order`
+        <where>
+            <if test="orderNo != null and orderNo!=''">
+                and order_no like concat('%',#{orderNo},'%')
+            </if>
+            <if test="userId != null">
+                and user_id = #{userId}
+            </if>
+            <if test="status != null">
+                and status = #{status}
+            </if>
+            <if test="beginTime != null">
+                and create_time &gt;= #{beginTime}
+            </if>
+            <if test="endTime != null">
+                and create_time &lt;= #{endTime}
+            </if>
+            <if test="isOverseas != null">
+                and is_overseas = #{isOverseas}
+            </if>
+        </where>
+        order by create_time desc
+    </select>
+    
+    <select id="getDetailsById" resultType="com.diy.entity.Orders">
+        select * from `order` where id=#{id}
+    </select>
+    
+    <select id="sumByMap" resultType="java.lang.Double">
+        select sum(amount) from `order`
+        <where>
+            <if test="begin!=null">
+                and create_time &gt; #{begin}
+            </if>
+            <if test="end!=null">
+                and create_time &lt; #{end}
+            </if>
+            <if test="status!=null">
+                and status=#{status}
+            </if>
+        </where>
+    </select>
+    
+    <select id="countByMap" resultType="java.lang.Integer">
+        select count(id) from `order`
+        <where>
+            <if test="begin!=null">
+                and create_time &gt; #{begin}
+            </if>
+            <if test="end!=null">
+                and create_time &lt; #{end}
+            </if>
+            <if test="status!=null">
+                and status=#{status}
+            </if>
+        </where>
+    </select>
+
+    <select id="getByEmailOrOrderNo" resultType="com.diy.entity.Orders">
+        select * from `order`
+        <where>
+            <if test="email != null and email != ''">
+                and email = #{email}
+            </if>
+            <if test="orderNo != null and orderNo != ''">
+                and order_no = #{orderNo}
+            </if>
+        </where>
+        order by create_time desc
+    </select>
+</mapper>

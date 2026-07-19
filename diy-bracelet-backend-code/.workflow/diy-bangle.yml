@@ -1,0 +1,62 @@
+version: '1.0'
+name: diy-bangle
+displayName: DiyBangle
+triggers:
+  trigger: auto
+  push:
+    branches:
+      prefix:
+        - master
+stages:
+  - name: stage-build
+    displayName: 构建
+    strategy: naturally
+    trigger: auto
+    executor: []
+    steps:
+      - step: build@maven
+        name: build_artifact
+        displayName: Maven 构建
+        jdkVersion: '17'
+        mavenVersion: 3.8.8
+        commands:
+          - mvn clean package -Dmaven.test.skip=true -U -e -X -B
+        artifacts:
+          - name: build_artifact
+            path:
+              - diy-server/target/diy-server-1.0-SNAPSHOT.jar
+              - docker-compose.yml
+        settings: []
+        caches:
+          - ~/.m2
+        notify: []
+        strategy:
+          retry: '0'
+  - name: stage-deploy
+    displayName: 部署
+    strategy: naturally
+    trigger: auto
+    executor: []
+    steps:
+      - step: deploy@agent
+        name: build_artifact
+        displayName: 主机部署
+        hostGroupID:
+          ID: shoulian
+          hostID:
+            - f994fafc-5f0e-4c02-a9ee-354366974390
+        deployArtifact:
+          - name: build_artifact
+            target: /home/ubuntu/diy-bangle
+            source: build
+            dependArtifact: build_artifact
+        script:
+          - cd /home/ubuntu/diy-bangle
+          - tar -zxf build_artifact.tar.gz
+          - find . -name "diy-server-1.0-SNAPSHOT.jar" -exec mv {} ./app.jar \;
+          - ls -R
+          - docker compose up -d --force-recreate diy-bangle-app
+          - docker image prune -f
+        notify: []
+        strategy:
+          retry: '0'

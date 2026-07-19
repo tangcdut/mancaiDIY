@@ -1,0 +1,45 @@
+diy:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    host: localhost
+    port: 3306
+    database: diy_bangle
+    username: root
+    password: DiyBangle@2024
+  minio:
+    endpoint: http://localhost:9000
+    access-key: minioadmin
+    secret-key: minioadmin123
+    bucket-name: diy-bangle
+  redis:
+    host: localhost
+    port: 6379
+    database: 0
+  wechat:
+    appid: wx17da3af1a3e9b533
+    secret: ff35c787dd059ec2990ee6d05451687f
+    mchid: 1112252194
+    mchSerialNo: 3EE8C417AA213E8BEDBC47EFCF935F87E9D2023D
+    privateKeyFilePath: /www/wwwroot/certs/apiclient_key.pem
+    apiV3Key: 82730119282ff42765f7b980bcad986a
+    weChatPayPublicKeyId: PUB_KEY_ID_0111122521942026052200111570001405
+    weChatPayPublicKeyPath: /www/wwwroot/certs/pub_key.pem
+    notifyUrl: https://diy.hk.cn/notify/paySuccess
+    refundNotifyUrl: https://diy.hk.cn/notify/refundSuccess
+  paypal:
+    clientId: AQ-HjjAzFDChQ1AE6l04du_4P8XAKmvGNEukh4UlkFJ84qcqfGHqpKnpOCoZ3U9pu8FObOULGlQ7vR5W
+    clientSecret: EDGv5rvK4fP408Ywip3Wtcl2jLh9OEWVAhzQfP4q6OBYBBjL2pv8q1oH2FyCCa_-a5N6EVGa8iMD5j9p
+    mode: sandbox
+    returnUrl: https://diy.hk.cn/api/paypal/paySuccess
+    cancelUrl: https://diy.hk.cn/api/paypal/payCancel
+    webhookId: 42Y13341BV7334357
+  deepseek:
+    api-key: sk-0bd0db03a4a94cc18eddde604975eab4 # TODO: 替换为生产环境的 DeepSeek API Key
+    api-url: https://api.deepseek.com/v1
+    model: deepseek-v4-flash
+    connect-timeout: 10000
+    read-timeout: 60000
+
+
+dev:
+  mock-payment: false

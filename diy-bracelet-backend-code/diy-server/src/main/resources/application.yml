@@ -1,0 +1,90 @@
+server:
+  port: 8080
+  address: 0.0.0.0
+
+spring:
+  profiles:
+    active: prod
+  main:
+    allow-circular-references: true
+  datasource:
+    druid:
+      driver-class-name: ${diy.datasource.driver-class-name:com.mysql.cj.jdbc.Driver}
+      url: jdbc:mysql://${diy.datasource.host:localhost}:${diy.datasource.port:3306}/${diy.datasource.database:diy_bangle}?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&useSSL=false&allowPublicKeyRetrieval=true
+      username: ${diy.datasource.username:root}
+      password: ${diy.datasource.password:DiyBangle@2024}
+      initial-size: 3
+      min-idle: 3
+      max-active: 10
+      max-wait: 60000
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      validation-query: SELECT 1
+      test-while-idle: true
+      test-on-borrow: false
+      test-on-return: false
+      pool-prepared-statements: true
+      max-pool-prepared-statement-per-connection-size: 20
+  redis:
+    host: ${diy.redis.host:localhost}
+    port: ${diy.redis.port:6379}
+    database: ${diy.redis.database:0}
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.diy.entity
+  configuration:
+    map-underscore-to-camel-case: true
+
+logging:
+  level:
+    com:
+      diy:
+        mapper: info
+        service: info
+        controller: info
+        utils: warn
+    org:
+      springframework:
+        web: info
+
+diy:
+  order:
+    allow-completed-refund: true
+  jwt:
+    admin-secret-key: itcast
+    admin-ttl: 720000000
+    admin-token-name: authentication
+    user-secret-key: itcast
+    user-ttl: 720000000
+    user-token-name: authentication
+  minio:
+    endpoint: ${diy.minio.endpoint:http://localhost:9000}
+    access-key: ${diy.minio.access-key:minioadmin}
+    secret-key: ${diy.minio.secret-key:minioadmin123}
+    bucket-name: ${diy.minio.bucket-name:diy-bangle}
+  wechat:
+    appid: ${diy.wechat.appid}
+    secret: ${diy.wechat.secret}
+    mchid: ${diy.wechat.mchid}
+    mchSerialNo: ${diy.wechat.mchSerialNo}
+    privateKeyFilePath: ${diy.wechat.privateKeyFilePath:/app/certs/apiclient_key.pem}
+    apiV3Key: ${diy.wechat.apiV3Key}
+    weChatPayPublicKeyId: ${diy.wechat.weChatPayPublicKeyId}
+    weChatPayPublicKeyPath: ${diy.wechat.weChatPayPublicKeyPath:/app/certs/pub_key.pem}
+    notifyUrl: ${diy.wechat.notifyUrl}
+    refundNotifyUrl: ${diy.wechat.refundNotifyUrl}
+  paypal:
+    clientId: ${diy.paypal.clientId:}
+    clientSecret: ${diy.paypal.clientSecret:}
+    mode: ${diy.paypal.mode:sandbox}
+    returnUrl: ${diy.paypal.returnUrl:}
+    cancelUrl: ${diy.paypal.cancelUrl:}
+    webhookId: ${diy.paypal.webhookId:}
+  deepseek:
+    api-key: ${diy.deepseek.api-key:}
+    api-url: ${diy.deepseek.api-url:https://api.deepseek.com/v1}
+    model: ${diy.deepseek.model:deepseek-chat}
+    connect-timeout: ${diy.deepseek.connect-timeout:10000}
+    read-timeout: ${diy.deepseek.read-timeout:60000}
+

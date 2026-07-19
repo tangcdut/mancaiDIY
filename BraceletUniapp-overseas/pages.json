@@ -1,0 +1,78 @@
+ {
+  "pages": [
+    {
+      "path": "pages/index/index",
+      "style": {"navigationBarTitleText": "首页 / Home"}
+    },
+    {
+      "path": "pages/design/index",
+      "style": {"navigationBarTitleText": "制作台 / Design"}
+    },
+    {
+      "path": "pages/product/list",
+      "style": {"navigationBarTitleText": "商品列表 / Products"}
+    },
+    {
+      "path": "pages/product/detail",
+      "style": {"navigationBarTitleText": "商品详情 / Details"}
+    },
+    {
+      "path": "pages/order/list",
+      "style": {"navigationBarTitleText": "订单列表 / Orders"}
+    },
+    {
+      "path": "pages/order/detail",
+      "style": {"navigationBarTitleText": "订单详情 / Order Details"}
+    },
+    {
+      "path": "pages/order/confirm",
+      "style": {"navigationBarTitleText": "确认订单 / Checkout"}
+    },
+    {
+      "path": "pages/address/select",
+      "style": {"navigationBarTitleText": "选择地址 / Select Address"}
+    },
+    {
+      "path": "pages/mine/index",
+      "style": {"navigationBarTitleText": "我的 / Mine"}
+    },
+    {
+      "path": "pages/address/list",
+      "style": {"navigationBarTitleText": "地址管理 / Addresses"}
+    },
+    {
+      "path": "pages/address/edit",
+      "style": {"navigationBarTitleText": "编辑地址 / Edit Address"}
+    },
+    {
+      "path": "pages/about/index",
+      "style": {"navigationBarTitleText": "关于我们 / About Us"}
+    },
+    {
+      "path": "pages/setting/index",
+      "style": {"navigationBarTitleText": "设置 / Settings"}
+    },
+    {
+      "path": "pages/customer-service/index",
+      "style": {"navigationBarTitleText": "联系客服 / Contact Support"}
+    }
+  ],
+  "tabBar": {
+    "color": "#666666",
+    "selectedColor": "#f5c93a",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      { "pagePath": "pages/index/index", "text": "首页 / Home", "iconPath": "static/tabbar/home.png", "selectedIconPath": "static/tabbar/home_selected.png" },
+      { "pagePath": "pages/design/index", "text": "制作台 / Design", "iconPath": "static/tabbar/design.png", "selectedIconPath": "static/tabbar/design_selected.png" },
+      { "pagePath": "pages/mine/index", "text": "我的 / Mine", "iconPath": "static/tabbar/mine.png", "selectedIconPath": "static/tabbar/mine_selected.png" }
+    ]
+  },
+
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "满彩珠宝 / Mancai Jewelry",
+    "navigationBarBackgroundColor": "#FFFFFF",
+    "backgroundColor": "#FFFFFF"
+  }
+}
