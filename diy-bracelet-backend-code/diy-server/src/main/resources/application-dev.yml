@@ -17,8 +17,10 @@ diy:
     port: 6380
     database: 0
   wechat:
-    appid: wx17da3af1a3e9b533
-    secret: ff35c787dd059ec2990ee6d05451687f
+#    appid: wx17da3af1a3e9b533
+#    secret: ff35c787dd059ec2990ee6d05451687f
+    appid: wx439e92e6e8fc24df
+    secret: a15f0a7e1fc919371ebc4a3492bbe324
     mchid: 1112252194
     mchSerialNo: 3EE8C417AA213E8BEDBC47EFCF935F87E9D2023D
     privateKeyFilePath: ./certs/apiclient_key.pem

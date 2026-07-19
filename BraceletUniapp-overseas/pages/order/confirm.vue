@@ -581,7 +581,8 @@ async function submitOrder() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20rpx 30rpx;
+  gap: 16rpx;
+  padding: 20rpx 24rpx;
   background: rgba(255,255,255,0.95);
   backdrop-filter: blur(20px);
   border-top: 2rpx solid #f0f0f0;
@@ -592,6 +593,8 @@ async function submitOrder() {
 .total-info {
   display: flex;
   align-items: baseline;
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 .total-info .label {
@@ -608,10 +611,11 @@ async function submitOrder() {
 .btn-group {
   display: flex;
   gap: 20rpx;
+  flex-shrink: 0;
 }
 
 .action-btn {
-  padding: 0 40rpx;
+  padding: 0 24rpx;
   height: 72rpx;
   line-height: 72rpx;
   font-size: 28rpx;
@@ -619,6 +623,7 @@ async function submitOrder() {
   border-radius: 36rpx;
   border: none;
   margin: 0;
+  white-space: nowrap;
 }
 
 .cart-btn {

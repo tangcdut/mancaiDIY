@@ -1790,48 +1790,56 @@ async function generateDesignImage() {
       return { w, h }
     }
 
-    // 绘制单个珠子的函数
-    const drawBead = (b, i, layout) => {
-        const angle = layout.angle
-        const beadSizeRpx = Number(b.size || 8) * 7
-        const beadSizePx = r2p(beadSizeRpx)
-        
-        const pendant = isPendant(b)
-        const placeRadius = pendant ? (beadRadius + beadSizePx / 2) : beadRadius
-        const bx = centerX + placeRadius * Math.cos(angle)
-        const by = centerY + placeRadius * Math.sin(angle)
-        
-        ctx.save()
-        ctx.translate(bx, by)
-        ctx.rotate(pendant ? (angle - Math.PI / 2) : (angle + Math.PI / 2))
-        
-        if (b.mirrored) {
-          ctx.scale(-1, 1)
-        }
-        
-        const imgInfo = beadImages[i]
-        if (imgInfo && imgInfo.img) {
-          const { w: drawWidth, h: drawHeight } = fitDims(beadSizePx, imgInfo.aspectRatio)
-          ctx.drawImage(imgInfo.img, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight)
-        } else {
-          ctx.beginPath()
-          ctx.arc(0, 0, beadSizePx / 2, 0, 2 * Math.PI)
-          ctx.fillStyle = b.color || '#e8e8e8'
-          ctx.fill()
-        }
-        ctx.restore()
-    }
-    
-    // 预加载 Logo（两遍绘制复用，避免重复异步加载）
+    // 预加载 Logo
     const logoImg = await loadImage(logoPath)
 
-    // 统一绘制函数：底层大珠 → 绳子 → Logo → 顶层普通珠（假定外层已设置好缩放变换）
-    const drawAll = () => {
-      // 底层珠子 (大尺寸 >= 24mm)
-      for (let i = 0; i < beadList.length; i++) {
-        const layout = beadLayouts.value[i]
-        if (layout && Number(beadList[i].size || 8) >= 24) drawBead(beadList[i], i, layout)
+    // 预计算每颗珠子的绘制几何(位置/尺寸/旋转)，测量与绘制共用同一份，杜绝两者不一致
+    const beadGeom = []
+    for (let i = 0; i < beadList.length; i++) {
+      const layout = beadLayouts.value[i]
+      if (!layout) continue
+      const b = beadList[i]
+      const beadSizePx = r2p(Number(b.size || 8) * 7)
+      const pendant = isPendant(b)
+      const placeRadius = pendant ? (beadRadius + beadSizePx / 2) : beadRadius
+      const im = beadImages[i]
+      const hasImg = !!(im && im.img)
+      const { w: dw, h: dh } = hasImg ? fitDims(beadSizePx, im.aspectRatio) : { w: beadSizePx, h: beadSizePx }
+      beadGeom.push({
+        bx: centerX + placeRadius * Math.cos(layout.angle),
+        by: centerY + placeRadius * Math.sin(layout.angle),
+        angle: layout.angle,
+        pendant,
+        mirrored: !!b.mirrored,
+        img: hasImg ? im.img : null,
+        color: b.color || '#e8e8e8',
+        beadSizePx,
+        dw, dh,
+        half: Math.sqrt(dw * dw + dh * dh) / 2,
+        sizeMm: Number(b.size || 8)
+      })
+    }
+
+    // 画一颗珠子(使用预计算几何)
+    const drawBeadG = (g) => {
+      ctx.save()
+      ctx.translate(g.bx, g.by)
+      ctx.rotate(g.pendant ? (g.angle - Math.PI / 2) : (g.angle + Math.PI / 2))
+      if (g.mirrored) ctx.scale(-1, 1)
+      if (g.img) {
+        ctx.drawImage(g.img, -g.dw / 2, -g.dh / 2, g.dw, g.dh)
+      } else {
+        ctx.beginPath()
+        ctx.arc(0, 0, g.beadSizePx / 2, 0, 2 * Math.PI)
+        ctx.fillStyle = g.color
+        ctx.fill()
       }
+      ctx.restore()
+    }
+
+    // 统一绘制：底层大珠 → 绳子 → Logo → 顶层普通珠（外层已设好缩放变换）
+    const drawAll = () => {
+      for (const g of beadGeom) if (g.sizeMm >= 24) drawBeadG(g)
       // 绳子
       ctx.beginPath()
       ctx.strokeStyle = '#e0e0e0'
@@ -1854,119 +1862,32 @@ async function generateDesignImage() {
         ctx.font = `${r2p(24)}px sans-serif`
         ctx.fillText('满彩珠宝', centerX, centerY)
       }
-      // 顶层珠子 (普通尺寸 < 24mm)
-      for (let i = 0; i < beadList.length; i++) {
-        const layout = beadLayouts.value[i]
-        if (layout && Number(beadList[i].size || 8) < 24) drawBead(beadList[i], i, layout)
-      }
+      for (const g of beadGeom) if (g.sizeMm < 24) drawBeadG(g)
     }
 
-    // 铺白底并围绕画布中心按 scale 绘制一遍
-    const renderPass = (scale) => {
-      ctx.setTransform(1, 0, 0, 1, 0, 0)
-      ctx.fillStyle = '#ffffff'
-      ctx.fillRect(0, 0, width, height)
-      ctx.save()
-      ctx.translate(centerX, centerY)
-      ctx.scale(scale, scale)
-      ctx.translate(-centerX, -centerY)
-      drawAll()
-      ctx.restore()
+    // ====== 计算所有元素离画布中心的最大外沿(上界)，据此缩放，围绕画布中心绘制 ======
+    // 测量与绘制共用 beadGeom(同一份坐标)，且不读画布像素 → 手机/电脑一致、整条手链完整。
+    let maxReach = Math.max(ropeRadius + r2p(2), r2p(100)) // 绳子(含线宽) 与 Logo(半径100rpx)
+    for (const g of beadGeom) {
+      const d = Math.hypot(g.bx - centerX, g.by - centerY) + g.half
+      if (d > maxReach) maxReach = d
     }
+    const limitPx = Math.min(centerX, centerY) - r2p(30) // 目标边距
+    const scale = Math.min(1, limitPx / maxReach)
 
-    // 扫描当前画布内容像素包围盒（返回 {minX,minY,maxX,maxY,data}，null=无内容/跨域污染）
-    const scanBounds = () => {
-      try {
-        const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data
-        let minX = canvas.width, minY = canvas.height, maxX = -1, maxY = -1
-        for (let y = 0; y < canvas.height; y++) {
-          for (let x = 0; x < canvas.width; x++) {
-            const idx = (y * canvas.width + x) * 4
-            if (data[idx] < 245 || data[idx + 1] < 245 || data[idx + 2] < 245) {
-              if (x < minX) minX = x
-              if (y < minY) minY = y
-              if (x > maxX) maxX = x
-              if (y > maxY) maxY = y
-            }
-          }
-        }
-        return maxX < 0 ? null : { minX, minY, maxX, maxY, data }
-      } catch (e) {
-        console.warn('[DesignImage] getImageData 失败(可能跨域污染):', e && e.message)
-        return null
-      }
-    }
+    // 绘制：围绕画布中心(绳圆心)缩放，整条手链居中且完整
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, width, height)
+    ctx.save()
+    ctx.translate(centerX, centerY)
+    ctx.scale(scale, scale)
+    ctx.translate(-centerX, -centerY)
+    drawAll()
+    ctx.restore()
 
-    // 几何粗估最大外沿，仅用于选一个“保守到肯定不会被裁”的首遍缩放
-    let maxReachGeom = Math.max(ropeRadius + r2p(2), r2p(100))
-    for (let i = 0; i < beadList.length; i++) {
-      const layout = beadLayouts.value[i]
-      if (!layout) continue
-      const b = beadList[i]
-      const bsp = r2p(Number(b.size || 8) * 7)
-      const placeR = isPendant(b) ? (beadRadius + bsp / 2) : beadRadius
-      const im = beadImages[i]
-      const { w: dw, h: dh } = im && im.img ? fitDims(bsp, im.aspectRatio) : { w: bsp, h: bsp }
-      const reach = placeR + Math.sqrt(dw * dw + dh * dh) / 2
-      if (reach > maxReachGeom) maxReachGeom = reach
-    }
-
-    const limitPx = Math.min(centerX, centerY) - r2p(40) // 内容半边落在此半径内(约留边距)
-
-    // 第一遍：保守缩放绘制，确保内容绝不贴边，便于准确测量真实包围盒
-    const s1 = Math.min(1, limitPx / (maxReachGeom * 2.5))
-    renderPass(s1)
-    const bounds = scanBounds()
-
-    if (bounds) {
-      const ccx = (bounds.minX + bounds.maxX) / 2
-      const ccy = (bounds.minY + bounds.maxY) / 2
-      // 折中居中：目标中心取“画布中心(Logo/绳圆心)”与“内容包围盒中心(珠子重心)”的中点，
-      // 让 Logo 与珠子各让一半，整体最平衡，避免偏右下或偏左上
-      const mx = (centerX + ccx) / 2
-      const my = (centerY + ccy) / 2
-
-      // 用第一遍像素实测“离目标中心 m 的最大半径”，据此精确缩放（完整且不过度缩小）
-      const data = bounds.data
-      let reachM = 1
-      for (let y = 0; y < canvas.height; y++) {
-        for (let x = 0; x < canvas.width; x++) {
-          const idx = (y * canvas.width + x) * 4
-          if (data[idx] < 245 || data[idx + 1] < 245 || data[idx + 2] < 245) {
-            const dx = x - mx
-            const dy = y - my
-            const r = Math.sqrt(dx * dx + dy * dy)
-            if (r > reachM) reachM = r
-          }
-        }
-      }
-      let k = limitPx / reachM
-      if (s1 * k > 1) k = 1 / s1 // 不放大超过原始逻辑尺寸，避免模糊
-
-      // 第二遍：把目标中心 m 搬到画布正中并按 k 缩放，再叠加与第一遍相同的缩放
-      ctx.setTransform(1, 0, 0, 1, 0, 0)
-      ctx.fillStyle = '#ffffff'
-      ctx.fillRect(0, 0, width, height)
-      ctx.save()
-      ctx.translate(centerX, centerY)
-      ctx.scale(k, k)
-      ctx.translate(-mx, -my)
-      ctx.translate(centerX, centerY)
-      ctx.scale(s1, s1)
-      ctx.translate(-centerX, -centerY)
-      drawAll()
-      ctx.restore()
-
-      const fb = scanBounds()
-      console.log('[DesignImage] canvas:', canvas.width, 'x', canvas.height,
-        'beads:', beadList.length, 's1:', s1.toFixed(3), 'k:', k.toFixed(3),
-        'final:', fb ? `x[${fb.minX},${fb.maxX}] y[${fb.minY},${fb.maxY}]` : 'n/a')
-    } else {
-      // 兜底(无法测量像素)：几何缩放，围绕中心画一遍
-      const gscale = maxReachGeom > limitPx ? (limitPx / maxReachGeom) : 1
-      renderPass(gscale)
-      console.log('[DesignImage] fallback geom scale:', gscale.toFixed(3))
-    }
+    console.log('[DesignImage] canvas:', canvas.width, 'beads:', beadGeom.length,
+      'scale:', scale.toFixed(3), 'maxReach:', Math.round(maxReach), 'limit:', Math.round(limitPx))
 
     // 8. 导出图片（缓冲区与 CSS 尺寸一致，两条导出路径都能完整获取整张画布）
     return new Promise((resolve, reject) => {
