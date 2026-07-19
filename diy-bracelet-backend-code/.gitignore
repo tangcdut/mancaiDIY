@@ -1,7 +1,16 @@
 # Maven 构建产物
 target/
-.m2/
 *.jar
+
+# Node / 前端依赖包
+node_modules/
+**/node_modules/
+dist/
+build/
+.vite/
+.next/
+.nuxt/
+coverage/
 
 # IDE 文件
 .idea/
