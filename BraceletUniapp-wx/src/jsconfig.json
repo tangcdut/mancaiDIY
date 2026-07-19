@@ -1,0 +1,30 @@
+{
+  
+  "compilerOptions": {
+    "target": "ES6",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"]
+    },
+    "lib": ["ESNext", "DOM"],
+    "jsx": "preserve",
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true
+  },
+  "vueCompilerOptions": {
+    "target": 3,
+    "globalTypesPath": "./types/vue-global.d.ts"
+  },
+  "include": [
+    "**/*.js",
+    "**/*.vue",
+    "**/*.json"
+  ],
+  "exclude": [
+    "node_modules",
+    "unpackage",
+    "dist"
+  ]
+}
