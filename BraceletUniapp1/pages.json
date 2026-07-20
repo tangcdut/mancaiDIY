@@ -1,0 +1,82 @@
+ {
+  "pages": [
+    {
+      "path": "pages/index/index",
+      "style": {"navigationBarTitleText": "首页"}
+    },
+    {
+      "path": "pages/design/index",
+      "style": {"navigationBarTitleText": "制作台"}
+    },
+    {
+      "path": "pages/product/list",
+      "style": {"navigationBarTitleText": "商品列表"}
+    },
+    {
+      "path": "pages/product/detail",
+      "style": {"navigationBarTitleText": "商品详情"}
+    },
+    {
+      "path": "pages/cart/index",
+      "style": {"navigationBarTitleText": "购物车"}
+    },
+    {
+      "path": "pages/order/list",
+      "style": {"navigationBarTitleText": "订单列表"}
+    },
+    {
+      "path": "pages/order/detail",
+      "style": {"navigationBarTitleText": "订单详情"}
+    },
+    {
+      "path": "pages/order/confirm",
+      "style": {"navigationBarTitleText": "确认订单"}
+    },
+    {
+      "path": "pages/address/select",
+      "style": {"navigationBarTitleText": "选择地址"}
+    },
+    {
+      "path": "pages/mine/index",
+      "style": {"navigationBarTitleText": "我的"}
+    },
+    {
+      "path": "pages/address/list",
+      "style": {"navigationBarTitleText": "地址管理"}
+    },
+    {
+      "path": "pages/address/edit",
+      "style": {"navigationBarTitleText": "编辑地址"}
+    },
+    {
+      "path": "pages/about/index",
+      "style": {"navigationBarTitleText": "关于我们"}
+    },
+    {
+      "path": "pages/setting/index",
+      "style": {"navigationBarTitleText": "设置"}
+    },
+    {
+      "path": "pages/customer-service/index",
+      "style": {"navigationBarTitleText": "联系客服"}
+    }
+  ],
+  "tabBar": {
+    "color": "#666666",
+    "selectedColor": "#f5c93a",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      { "pagePath": "pages/index/index", "text": "首页", "iconPath": "static/tabbar/home.png", "selectedIconPath": "static/tabbar/home_selected.png" },
+      { "pagePath": "pages/design/index", "text": "制作台", "iconPath": "static/tabbar/design.png", "selectedIconPath": "static/tabbar/design_selected.png" },
+      { "pagePath": "pages/cart/index", "text": "购物车", "iconPath": "static/tabbar/cart.png", "selectedIconPath": "static/tabbar/cart_selected.png" },
+      { "pagePath": "pages/mine/index", "text": "我的", "iconPath": "static/tabbar/mine.png", "selectedIconPath": "static/tabbar/mine_selected.png" }
+    ]
+  },
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "满彩珠宝",
+    "navigationBarBackgroundColor": "#FFFFFF",
+    "backgroundColor": "#FFFFFF"
+  }
+}
