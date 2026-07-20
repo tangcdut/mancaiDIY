@@ -208,9 +208,16 @@ export default {
 .category-management {
   background: #fff;
   padding: 20px;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
+}
+
+/* 强制表体在固定高度内滚动：覆盖 Element 默认的 .el-table{flex:1} 与 body-wrapper{overflow:hidden} */
+.category-management ::v-deep .el-table {
+  flex: none;
+}
+
+.category-management ::v-deep .el-table__body-wrapper {
+  max-height: calc(100vh - 320px);
+  overflow-y: auto;
 }
 
 .header {
@@ -218,9 +225,5 @@ export default {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
-}
-
-.el-table {
-  flex: 1;
 }
 </style>

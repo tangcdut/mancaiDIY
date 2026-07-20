@@ -590,9 +590,16 @@ export default {
 .product-management {
   background: #fff;
   padding: 20px;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
+}
+
+/* 强制表体在固定高度内滚动：覆盖 Element 默认的 .el-table{flex:1} 与 body-wrapper{overflow:hidden} */
+.product-management ::v-deep .el-table {
+  flex: none;
+}
+
+.product-management ::v-deep .el-table__body-wrapper {
+  max-height: calc(100vh - 320px);
+  overflow-y: auto;
 }
 
 .header {
@@ -604,10 +611,6 @@ export default {
 
 .filter-bar {
   margin-bottom: 20px;
-}
-
-.el-table {
-  flex: 1;
 }
 
 .avatar-uploader .el-upload {

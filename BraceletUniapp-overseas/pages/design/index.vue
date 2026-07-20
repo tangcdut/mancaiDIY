@@ -469,7 +469,8 @@ import {
   designProductList,
   designOrderCreate,
   uploadFile,
-  aiRecommend
+  aiRecommend,
+  designRender
 } from '../../api/api.js'
 import { resolveImageUrl } from '../../utils/imageHelper.js'
 import Icon from '../../components/Icon.vue'
@@ -1695,12 +1696,17 @@ async function generateDesignImage() {
     }
 
     const ctx = canvas.getContext('2d')
-    
-    // 画布缓冲区尺寸与 CSS 尺寸保持 1:1。
-    // 关键：这样 toDataURL / canvasToTempFilePath 无论走哪条导出路径，
-    // 抓取的区域都等于整张画布，避免因缓冲区大于抓取区导致右侧/底部被裁切。
-    canvas.width = canvasWidth
-    canvas.height = canvasHeight
+
+    // uni canvas 2d 标准用法：缓冲区放大 dpr 倍并 ctx.scale(dpr)，之后按 CSS 像素坐标绘制。
+    // 少了这步会导致内容整体偏移/被裁(实测偏右下 +50px 左右)。导出走 toDataURL 抓整张缓冲区。
+    let dpr = 2
+    try {
+      const info = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
+      dpr = info.pixelRatio || 2
+    } catch (e) {}
+    canvas.width = canvasWidth * dpr
+    canvas.height = canvasHeight * dpr
+    ctx.scale(dpr, dpr)
     
     // rpx to px 比例 (基于 750 设计稿)
     const ratio = canvasWidth / 560 // 560rpx是CSS设置的宽度
@@ -1793,7 +1799,7 @@ async function generateDesignImage() {
     // 预加载 Logo
     const logoImg = await loadImage(logoPath)
 
-    // 预计算每颗珠子的绘制几何(位置/尺寸/旋转)，测量与绘制共用同一份，杜绝两者不一致
+    // 预计算每颗珠子的绘制几何(位置/尺寸/旋转)
     const beadGeom = []
     for (let i = 0; i < beadList.length; i++) {
       const layout = beadLayouts.value[i]
@@ -1820,74 +1826,87 @@ async function generateDesignImage() {
       })
     }
 
-    // 画一颗珠子(使用预计算几何)
+    // ====== 计算内容包围盒(绳子+Logo+所有珠子)，据此"居中 + 缩放" ======
+    // 关键：把缩放/居中直接烘焙进坐标(不用 ctx.scale 全局变换——该变换在部分 uni
+    // canvas 上不生效，导致之前图未缩放且偏右下被裁)。纯几何，手机/电脑完全一致。
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    const incBox = (cx0, cy0, hf) => {
+      if (cx0 - hf < minX) minX = cx0 - hf
+      if (cx0 + hf > maxX) maxX = cx0 + hf
+      if (cy0 - hf < minY) minY = cy0 - hf
+      if (cy0 + hf > maxY) maxY = cy0 + hf
+    }
+    incBox(centerX, centerY, ropeRadius + r2p(2)) // 绳子(含线宽)
+    incBox(centerX, centerY, r2p(100))            // Logo(半径100rpx)
+    for (const g of beadGeom) incBox(g.bx, g.by, g.half)
+
+    const ccx = (minX + maxX) / 2
+    const ccy = (minY + maxY) / 2
+    const he = Math.max((maxX - minX) / 2, (maxY - minY) / 2)
+    const limitPx = Math.min(centerX, centerY) - r2p(60) // 目标边距(留足，吸收任何残余偏移)
+    const scale = Math.min(1, he > 0 ? limitPx / he : 1)
+
+    // 逻辑坐标 → 最终画布坐标（把 内容中心→画布中心 + 缩放 烘焙进来）
+    const fx = (x) => centerX + scale * (x - ccx)
+    const fy = (y) => centerY + scale * (y - ccy)
+
+    // 画一颗珠子（最终坐标；仅 translate/rotate + 局部镜像，不依赖全局 scale）
     const drawBeadG = (g) => {
+      const dw = g.dw * scale
+      const dh = g.dh * scale
       ctx.save()
-      ctx.translate(g.bx, g.by)
+      ctx.translate(fx(g.bx), fy(g.by))
       ctx.rotate(g.pendant ? (g.angle - Math.PI / 2) : (g.angle + Math.PI / 2))
       if (g.mirrored) ctx.scale(-1, 1)
       if (g.img) {
-        ctx.drawImage(g.img, -g.dw / 2, -g.dh / 2, g.dw, g.dh)
+        ctx.drawImage(g.img, -dw / 2, -dh / 2, dw, dh)
       } else {
         ctx.beginPath()
-        ctx.arc(0, 0, g.beadSizePx / 2, 0, 2 * Math.PI)
+        ctx.arc(0, 0, (g.beadSizePx * scale) / 2, 0, 2 * Math.PI)
         ctx.fillStyle = g.color
         ctx.fill()
       }
       ctx.restore()
     }
 
-    // 统一绘制：底层大珠 → 绳子 → Logo → 顶层普通珠（外层已设好缩放变换）
+    // 统一绘制：底层大珠 → 绳子 → Logo → 顶层普通珠（坐标均已烘焙缩放/居中）
     const drawAll = () => {
       for (const g of beadGeom) if (g.sizeMm >= 24) drawBeadG(g)
       // 绳子
       ctx.beginPath()
       ctx.strokeStyle = '#e0e0e0'
-      ctx.lineWidth = r2p(2)
+      ctx.lineWidth = Math.max(1, r2p(2) * scale)
       ctx.setLineDash([])
-      ctx.arc(centerX, centerY, ropeRadius, 0, 2 * Math.PI)
+      ctx.arc(fx(centerX), fy(centerY), ropeRadius * scale, 0, 2 * Math.PI)
       ctx.stroke()
       // Logo
-      const logoSize = r2p(200)
+      const logoSize = r2p(200) * scale
+      const lx = fx(centerX)
+      const ly = fy(centerY)
       if (logoImg) {
-        ctx.drawImage(logoImg, centerX - logoSize / 2, centerY - logoSize / 2, logoSize, logoSize)
+        ctx.drawImage(logoImg, lx - logoSize / 2, ly - logoSize / 2, logoSize, logoSize)
       } else {
         ctx.beginPath()
         ctx.fillStyle = '#f7f7f7'
-        ctx.arc(centerX, centerY, logoSize / 2, 0, 2 * Math.PI)
+        ctx.arc(lx, ly, logoSize / 2, 0, 2 * Math.PI)
         ctx.fill()
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
         ctx.fillStyle = '#bfbfbf'
-        ctx.font = `${r2p(24)}px sans-serif`
-        ctx.fillText('满彩珠宝', centerX, centerY)
+        ctx.font = `${r2p(24) * scale}px sans-serif`
+        ctx.fillText('满彩珠宝', lx, ly)
       }
       for (const g of beadGeom) if (g.sizeMm < 24) drawBeadG(g)
     }
 
-    // ====== 计算所有元素离画布中心的最大外沿(上界)，据此缩放，围绕画布中心绘制 ======
-    // 测量与绘制共用 beadGeom(同一份坐标)，且不读画布像素 → 手机/电脑一致、整条手链完整。
-    let maxReach = Math.max(ropeRadius + r2p(2), r2p(100)) // 绳子(含线宽) 与 Logo(半径100rpx)
-    for (const g of beadGeom) {
-      const d = Math.hypot(g.bx - centerX, g.by - centerY) + g.half
-      if (d > maxReach) maxReach = d
-    }
-    const limitPx = Math.min(centerX, centerY) - r2p(30) // 目标边距
-    const scale = Math.min(1, limitPx / maxReach)
-
-    // 绘制：围绕画布中心(绳圆心)缩放，整条手链居中且完整
-    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    // 绘制（在 dpr 基础变换之上按 CSS 坐标绘制；坐标已烘焙缩放+居中）
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, width, height)
-    ctx.save()
-    ctx.translate(centerX, centerY)
-    ctx.scale(scale, scale)
-    ctx.translate(-centerX, -centerY)
     drawAll()
-    ctx.restore()
 
     console.log('[DesignImage] canvas:', canvas.width, 'beads:', beadGeom.length,
-      'scale:', scale.toFixed(3), 'maxReach:', Math.round(maxReach), 'limit:', Math.round(limitPx))
+      'scale:', scale.toFixed(3), 'bboxC:', `(${Math.round(ccx)},${Math.round(ccy)})`,
+      'he:', Math.round(he), 'limit:', Math.round(limitPx))
 
     // 8. 导出图片（缓冲区与 CSS 尺寸一致，两条导出路径都能完整获取整张画布）
     return new Promise((resolve, reject) => {
@@ -1940,41 +1959,109 @@ async function generateDesignImage() {
 }
 
 // 提交订单
+// 构建后端渲染规格：前端完成全部几何(缩放/居中)，输出每颗珠子在成图中的最终坐标/尺寸/旋转。
+// 后端只按坐标合成，避免浏览器 canvas 在不同设备上的缩放/偏移坑。
+function buildDesignSpec() {
+  const SIZE = 1000
+  const ropeR = Number(visualRadius.value) || 0   // rpx
+  const layoutR = Number(layoutRadius.value) || 0 // rpx
+
+  // 以手链中心为原点(rpx)收集元素并求包围盒
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  const inc = (ox, oy, half) => {
+    if (ox - half < minX) minX = ox - half
+    if (ox + half > maxX) maxX = ox + half
+    if (oy - half < minY) minY = oy - half
+    if (oy + half > maxY) maxY = oy + half
+  }
+  inc(0, 0, ropeR + 2)   // 绳子
+  inc(0, 0, 100)         // Logo(200rpx，半径100)
+
+  const rawBeads = []
+  beads.value.forEach((b, i) => {
+    const layout = beadLayouts.value[i]
+    if (!layout) return
+    const sizeRpx = Number(b.size || 8) * 7
+    const pendant = isPendant(b)
+    const placeR = pendant ? (layoutR + sizeRpx / 2) : layoutR
+    const ox = placeR * Math.cos(layout.angle)
+    const oy = placeR * Math.sin(layout.angle)
+    inc(ox, oy, sizeRpx * Math.SQRT2 / 2) // 方形半对角线(安全上界)
+
+    let color = b.color || '#e8e8e8'
+    if (typeof color === 'string' && color.includes('gradient')) {
+      const m = color.match(/#[0-9a-fA-F]{6}/)
+      color = m ? m[0] : '#e8e8e8'
+    }
+    rawBeads.push({
+      ox, oy, sizeRpx,
+      rot: pendant ? (layout.angle - Math.PI / 2) : (layout.angle + Math.PI / 2),
+      mirror: !!b.mirrored,
+      url: b.imageUrl || '',
+      color,
+      below: Number(b.size || 8) >= 24
+    })
+  })
+
+  if (!isFinite(minX)) { minX = -ropeR - 100; maxX = ropeR + 100; minY = minX; maxY = maxX }
+
+  const ccx = (minX + maxX) / 2
+  const ccy = (minY + maxY) / 2
+  const he = Math.max((maxX - minX) / 2, (maxY - minY) / 2, 1)
+  const margin = SIZE * 0.06
+  const scale = (SIZE / 2 - margin) / he // rpx → 成图像素
+  const mapX = (ox) => SIZE / 2 + scale * (ox - ccx)
+  const mapY = (oy) => SIZE / 2 + scale * (oy - ccy)
+
+  // Logo 完整地址(便于后端拉取)
+  let logoUrl = logoPath
+  // #ifdef H5
+  try { if (typeof window !== 'undefined' && window.location) logoUrl = window.location.origin + logoPath } catch (e) {}
+  // #endif
+
+  return {
+    size: SIZE,
+    rope: { cx: mapX(0), cy: mapY(0), r: ropeR * scale, color: '#e0e0e0', width: Math.max(1, 2 * scale) },
+    logo: { cx: mapX(0), cy: mapY(0), size: 200 * scale, url: logoUrl },
+    beads: rawBeads.map((rb) => ({
+      url: rb.url,
+      cx: mapX(rb.ox),
+      cy: mapY(rb.oy),
+      size: rb.sizeRpx * scale,
+      rot: rb.rot,
+      mirror: rb.mirror,
+      color: rb.color,
+      below: rb.below
+    }))
+  }
+}
+
 async function submitOrder() {
   if (loading.value) return
-  
-  try {
-    // Generate & Upload Image
-    const tempFilePath = await generateDesignImage()
-    
-    uni.showLoading({ title: '上传设计图... / Uploading...' })
-    const uploadRes = await uploadFile(tempFilePath, 'diy_design')
-    console.log('Design upload result:', uploadRes)
-    
-    // 获取返回的图片路径
-    let rawPath = ''
-    if (typeof uploadRes === 'string') {
-        rawPath = uploadRes
-    } else if (uploadRes) {
-        // 尝试多种可能的字段名
-        rawPath = uploadRes.url || uploadRes.path || uploadRes.fileUrl || uploadRes.fileName || ''
-        if (!rawPath && uploadRes.data) {
-             rawPath = uploadRes.data.url || uploadRes.data.path || ''
-        }
-    }
-    
-    console.log('Extracted raw path:', rawPath)
 
-    // 确保是完整的URL
-    let designUrl = ''
-    if (rawPath) {
-        // 使用 resolveImageUrl 统一处理，它会自动判断是否需要添加 /admin/common/image 前缀
-        designUrl = resolveImageUrl(rawPath)
+  try {
+    // 后端合成设计图(替代浏览器 canvas)
+    uni.showLoading({ title: '生成设计图... / Generating...', mask: true })
+    const spec = buildDesignSpec()
+    const renderRes = await designRender(spec)
+
+    // 取返回路径
+    let rawPath = ''
+    if (typeof renderRes === 'string') {
+      rawPath = renderRes
+    } else if (renderRes) {
+      rawPath = renderRes.url || renderRes.path || ''
+      if (!rawPath && renderRes.data) rawPath = renderRes.data.url || renderRes.data.path || ''
     }
-    
+
+    let designUrl = rawPath ? resolveImageUrl(rawPath) : ''
     console.log('Final design URL:', designUrl)
-    
+
     uni.hideLoading()
+    if (!designUrl) {
+      uni.showToast({ title: '设计图生成失败 / Generate failed', icon: 'none' })
+      return
+    }
     
     // 生成详细的珠子排列描述
     let beadDescription = ''
