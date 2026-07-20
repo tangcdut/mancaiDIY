@@ -1,0 +1,30 @@
+{
+  
+  "compilerOptions": {
+    "target": "ES6",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"]
+    },
+    "lib": ["ESNext", "DOM"],
+    "jsx": "preserve",
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "ignoreDeprecations": "6.0"
+  },
+  "vueCompilerOptions": {
+    "target": 3
+  },
+  "include": [
+    "**/*.js",
+    "**/*.vue",
+    "**/*.json"
+  ],
+  "exclude": [
+    "node_modules",
+    "unpackage",
+    "dist"
+  ]
+}

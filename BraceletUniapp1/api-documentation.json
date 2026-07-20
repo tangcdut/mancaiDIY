@@ -1,0 +1,803 @@
+{
+  "title": "DIY手镯小程序后端接口文档",
+  "version": "1.0.0",
+  "baseUrl": "http://localhost:8080",
+  "authentication": {
+    "type": "JWT",
+    "header": "authentication",
+    "description": "除登录和店铺状态接口外，其他接口都需要在请求头中携带JWT token"
+  },
+  "responseFormat": {
+    "success": {
+      "code": 1,
+      "msg": "成功",
+      "data": {}
+    },
+    "error": {
+      "code": 0,
+      "msg": "错误信息",
+      "data": null
+    }
+  },
+  "modules": [
+    {
+      "name": "用户登录模块",
+      "basePath": "/user/user",
+      "apis": [
+        {
+          "name": "微信登录",
+          "method": "POST",
+          "path": "/user/user/login",
+          "auth": false,
+          "description": "通过微信code换取token",
+          "requestBody": {
+            "type": "application/json",
+            "schema": {
+              "code": {
+                "type": "string",
+                "required": true,
+                "description": "微信授权code"
+              }
+            },
+            "example": {
+              "code": "081234abcd"
+            }
+          },
+          "response": {
+            "id": {
+              "type": "number",
+              "description": "用户ID"
+            },
+            "openid": {
+              "type": "string",
+              "description": "微信openid"
+            },
+            "token": {
+              "type": "string",
+              "description": "JWT令牌"
+            }
+          },
+          "responseExample": {
+            "code": 1,
+            "msg": "成功",
+            "data": {
+              "id": 1,
+              "openid": "oXxXxXxXxXxXxXxXxXxXxXxXx",
+              "token": "eyJhbGciOiJIUzI1NiJ9..."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "分类模块",
+      "basePath": "/user/category",
+      "apis": [
+        {
+          "name": "查询分类列表",
+          "method": "GET",
+          "path": "/user/category/list",
+          "auth": true,
+          "description": "获取所有商品分类",
+          "requestParams": {},
+          "response": {
+            "categories": {
+              "type": "array",
+              "items": {
+                "id": {
+                  "type": "number",
+                  "description": "分类ID"
+                },
+                "name": {
+                  "type": "string",
+                  "description": "分类名称"
+                },
+                "sort": {
+                  "type": "number",
+                  "description": "排序"
+                },
+                "status": {
+                  "type": "number",
+                  "description": "状态"
+                }
+              }
+            }
+          },
+          "responseExample": {
+            "code": 1,
+            "data": {
+              "categories": [
+                {
+                  "id": 1,
+                  "name": "手镯",
+                  "sort": 1,
+                  "status": 1
+                },
+                {
+                  "id": 2,
+                  "name": "手链",
+                  "sort": 2,
+                  "status": 1
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "商品模块",
+      "basePath": "/user/product",
+      "apis": [
+        {
+          "name": "根据分类查询商品列表",
+          "method": "GET",
+          "path": "/user/product/list",
+          "auth": true,
+          "description": "根据分类ID查询该分类下的所有商品",
+          "requestParams": {
+            "categoryId": {
+              "type": "number",
+              "required": true,
+              "description": "分类ID"
+            }
+          },
+          "requestExample": "/user/product/list?categoryId=1",
+          "response": {
+            "products": {
+              "type": "array",
+              "items": {
+                "id": "商品ID",
+                "title": "商品标题",
+                "description": "商品描述",
+                "coverImage": "封面图URL",
+                "price": "价格(BigDecimal)",
+                "weight": "克重(BigDecimal)",
+                "stock": "库存",
+                "status": "状态 1上架 0下架"
+              }
+            }
+          },
+          "responseExample": {
+            "code": 1,
+            "data": {
+              "products": [
+                {
+                  "id": 1,
+                  "title": "银手镯",
+                  "description": "纯银手镯，精美工艺",
+                  "coverImage": "https://oss.example.com/bracelet1.jpg",
+                  "price": 299.00,
+                  "weight": 15.5,
+                  "stock": 50,
+                  "status": 1
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "查询商品详情",
+          "method": "GET",
+          "path": "/user/product/detail",
+          "auth": true,
+          "description": "根据商品ID查询商品详细信息",
+          "requestParams": {
+            "id": {
+              "type": "number",
+              "required": true,
+              "description": "商品ID"
+            }
+          },
+          "requestExample": "/user/product/detail?id=1",
+          "response": {
+            "product": {
+              "id": "商品ID",
+              "title": "商品标题",
+              "description": "商品描述",
+              "coverImage": "封面图URL",
+              "price": "价格",
+              "weight": "克重",
+              "stock": "库存",
+              "status": "状态",
+              "categoryId": "分类ID"
+            }
+          },
+          "responseExample": {
+            "code": 1,
+            "data": {
+              "product": {
+                "id": 1,
+                "title": "银手镯",
+                "description": "纯银手镯，精美工艺",
+                "coverImage": "https://oss.example.com/bracelet1.jpg",
+                "price": 299.00,
+                "weight": 15.5,
+                "stock": 50,
+                "status": 1,
+                "categoryId": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "购物车模块",
+      "basePath": "/user/cart",
+      "apis": [
+        {
+          "name": "添加商品到购物车",
+          "method": "POST",
+          "path": "/user/cart/add",
+          "auth": true,
+          "description": "添加商品到购物车",
+          "requestBody": {
+            "type": "application/json",
+            "schema": {
+              "productId": {
+                "type": "number",
+                "required": true,
+                "description": "商品ID"
+              },
+              "quantity": {
+                "type": "number",
+                "required": true,
+                "description": "购买数量"
+              }
+            },
+            "example": {
+              "productId": 1,
+              "quantity": 2
+            }
+          },
+          "response": {
+            "cartItem": {
+              "productId": "商品ID",
+              "quantity": "数量"
+            }
+          },
+          "responseExample": {
+            "code": 1,
+            "data": {
+              "cartItem": {
+                "productId": 1,
+                "quantity": 2
+              }
+            }
+          }
+        },
+        {
+          "name": "查看购物车",
+          "method": "GET",
+          "path": "/user/cart/list",
+          "auth": true,
+          "description": "获取当前用户的购物车列表",
+          "requestParams": {},
+          "response": {
+            "items": {
+              "type": "array",
+              "items": {
+                "productId": "商品ID",
+                "title": "商品标题",
+                "price": "单价",
+                "quantity": "数量",
+                "coverImage": "封面图"
+              }
+            },
+            "totalAmount": "总金额"
+          },
+          "responseExample": {
+            "code": 1,
+            "data": {
+              "items": [
+                {
+                  "productId": 1,
+                  "title": "银手镯",
+                  "price": 299.00,
+                  "quantity": 2,
+                  "coverImage": "https://oss.example.com/bracelet1.jpg"
+                }
+              ],
+              "totalAmount": 598.00
+            }
+          }
+        },
+        {
+          "name": "删除购物车商品",
+          "method": "POST",
+          "path": "/user/cart/delete",
+          "auth": true,
+          "description": "从购物车删除指定商品",
+          "requestBody": {
+            "type": "application/json",
+            "schema": {
+              "productId": {
+                "type": "number",
+                "required": true,
+                "description": "商品ID"
+              }
+            },
+            "example": {
+              "productId": 1
+            }
+          },
+          "responseExample": {
+            "code": 1,
+            "msg": "success"
+          }
+        },
+        {
+          "name": "清空购物车",
+          "method": "DELETE",
+          "path": "/user/cart/clean",
+          "auth": true,
+          "description": "清空当前用户购物车",
+          "requestParams": {},
+          "responseExample": {
+            "code": 1,
+            "msg": "success"
+          }
+        },
+        {
+          "name": "减少商品数量",
+          "method": "POST",
+          "path": "/user/cart/sub",
+          "auth": true,
+          "description": "减少购物车中商品数量（旧接口）",
+          "requestBody": {
+            "type": "application/json",
+            "schema": {
+              "dishId": "菜品ID",
+              "setmealId": "套餐ID",
+              "dishFlavor": "口味"
+            },
+            "example": {
+              "dishId": 1,
+              "setmealId": null,
+              "dishFlavor": ""
+            }
+          },
+          "responseExample": {
+            "code": 1,
+            "msg": "success"
+          }
+        }
+      ]
+    },
+    {
+      "name": "订单模块",
+      "basePath": "/user/order",
+      "apis": [
+        {
+          "name": "提交订单",
+          "method": "POST",
+          "path": "/user/order/submit",
+          "auth": true,
+          "description": "用户下单",
+          "requestBody": {
+            "type": "application/json",
+            "schema": {
+              "addressBookId": {
+                "type": "number",
+                "description": "地址簿ID"
+              },
+              "payMethod": {
+                "type": "number",
+                "description": "付款方式"
+              },
+              "remark": {
+                "type": "string",
+                "description": "备注"
+              },
+              "estimatedDeliveryTime": {
+                "type": "string",
+                "description": "预计送达时间 格式: yyyy-MM-dd HH:mm:ss"
+              },
+              "deliveryStatus": {
+                "type": "number",
+                "description": "配送状态 1立即送出 0选择具体时间"
+              },
+              "tablewareNumber": {
+                "type": "number",
+                "description": "餐具数量"
+              },
+              "tablewareStatus": {
+                "type": "number",
+                "description": "餐具数量状态 1按餐量提供 0选择具体数量"
+              },
+              "packAmount": {
+                "type": "number",
+                "description": "打包费"
+              },
+              "amount": {
+                "type": "number",
+                "description": "总金额"
+              }
+            },
+            "example": {
+              "addressBookId": 1,
+              "payMethod": 1,
+              "remark": "尽快送达",
+              "estimatedDeliveryTime": "2025-12-01 18:00:00",
+              "deliveryStatus": 1,
+              "tablewareNumber": 1,
+              "tablewareStatus": 1,
+              "packAmount": 0,
+              "amount": 598.00
+            }
+          },
+          "response": {
+            "id": "订单ID",
+            "orderNo": "订单号",
+            "amount": "订单金额",
+            "orderTime": "下单时间"
+          },
+          "responseExample": {
+            "code": 1,
+            "data": {
+              "id": 1,
+              "orderNo": "20251201170000001",
+              "amount": 598.00,
+              "orderTime": "2025-12-01T17:00:00"
+            }
+          }
+        },
+        {
+          "name": "从购物车创建订单",
+          "method": "POST",
+          "path": "/user/order/create",
+          "auth": true,
+          "description": "直接从购物车生成订单",
+          "requestParams": {},
+          "response": {
+            "orderId": "订单ID",
+            "orderNo": "订单号",
+            "amount": "订单金额"
+          },
+          "responseExample": {
+            "code": 1,
+            "data": {
+              "orderId": 1,
+              "orderNo": "20251201170000001",
+              "amount": 598.00
+            }
+          }
+        },
+        {
+          "name": "订单支付",
+          "method": "PUT",
+          "path": "/user/order/payment",
+          "auth": true,
+          "description": "发起订单支付",
+          "requestBody": {
+            "type": "application/json",
+            "schema": {
+              "orderNumber": {
+                "type": "string",
+                "required": true,
+                "description": "订单号"
+              },
+              "payMethod": {
+                "type": "number",
+                "required": true,
+                "description": "付款方式"
+              }
+            },
+            "example": {
+              "orderNumber": "20251201170000001",
+              "payMethod": 1
+            }
+          },
+          "response": {
+            "nonceStr": "随机字符串",
+            "paySign": "签名",
+            "timeStamp": "时间戳",
+            "signType": "签名类型",
+            "packageStr": "预支付交易会话标识"
+          },
+          "responseExample": {
+            "code": 1,
+            "data": {
+              "nonceStr": "5K8264ILTKCH16CQ2502SI8ZNMTM67VS",
+              "paySign": "C380BEC2BFD727A4B6845133519F3AD6",
+              "timeStamp": "1638345120",
+              "signType": "MD5",
+              "packageStr": "prepay_id=wx12345678901234567890"
+            }
+          }
+        },
+        {
+          "name": "分页查询订单列表",
+          "method": "GET",
+          "path": "/user/order/list",
+          "auth": true,
+          "description": "分页查询用户订单",
+          "requestParams": {
+            "page": {
+              "type": "number",
+              "required": false,
+              "default": 1,
+              "description": "页码"
+            },
+            "size": {
+              "type": "number",
+              "required": false,
+              "default": 20,
+              "description": "每页大小"
+            },
+            "status": {
+              "type": "number",
+              "required": false,
+              "description": "订单状态 0待支付 1已支付 2已发货 3已完成"
+            }
+          },
+          "requestExample": "/user/order/list?page=1&size=10&status=1",
+          "response": {
+            "orders": {
+              "type": "array",
+              "items": {
+                "orderId": "订单ID",
+                "orderNo": "订单号",
+                "amount": "订单金额",
+                "status": "订单状态",
+                "createTime": "创建时间"
+              }
+            },
+            "page": "当前页码",
+            "size": "每页大小",
+            "total": "总记录数"
+          },
+          "responseExample": {
+            "code": 1,
+            "data": {
+              "orders": [
+                {
+                  "orderId": 1,
+                  "orderNo": "20251201170000001",
+                  "amount": 598.00,
+                  "status": 1,
+                  "createTime": "2025-12-01T17:00:00"
+                }
+              ],
+              "page": 1,
+              "size": 10,
+              "total": 50
+            }
+          }
+        },
+        {
+          "name": "查询订单详情",
+          "method": "GET",
+          "path": "/user/order/detail",
+          "auth": true,
+          "description": "根据orderId查看订单详情",
+          "requestParams": {
+            "orderId": {
+              "type": "number",
+              "required": true,
+              "description": "订单ID"
+            }
+          },
+          "requestExample": "/user/order/detail?orderId=1",
+          "response": {
+            "order": {
+              "orderId": "订单ID",
+              "orderNo": "订单号",
+              "amount": "订单金额",
+              "status": "订单状态",
+              "items": {
+                "type": "array",
+                "items": {
+                  "productId": "商品ID",
+                  "title": "商品标题",
+                  "price": "单价",
+                  "quantity": "数量"
+                }
+              }
+            }
+          },
+          "responseExample": {
+            "code": 1,
+            "data": {
+              "order": {
+                "orderId": 1,
+                "orderNo": "20251201170000001",
+                "amount": 598.00,
+                "status": 1,
+                "items": [
+                  {
+                    "productId": 1,
+                    "title": "银手镯",
+                    "price": 299.00,
+                    "quantity": 2
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "name": "历史订单查询",
+          "method": "GET",
+          "path": "/user/order/historyOrders",
+          "auth": true,
+          "description": "查询历史订单（旧接口）",
+          "requestParams": {
+            "page": "页码",
+            "pageSize": "每页大小",
+            "status": "订单状态"
+          }
+        },
+        {
+          "name": "查询订单详情（旧接口）",
+          "method": "GET",
+          "path": "/user/order/orderDetail/{id}",
+          "auth": true,
+          "description": "根据订单ID查询详情",
+          "pathParams": {
+            "id": {
+              "type": "number",
+              "required": true,
+              "description": "订单ID"
+            }
+          },
+          "requestExample": "/user/order/orderDetail/1"
+        },
+        {
+          "name": "取消订单",
+          "method": "PUT",
+          "path": "/user/order/cancel/{id}",
+          "auth": true,
+          "description": "取消指定订单",
+          "pathParams": {
+            "id": {
+              "type": "number",
+              "required": true,
+              "description": "订单ID"
+            }
+          },
+          "requestExample": "/user/order/cancel/1",
+          "responseExample": {
+            "code": 1,
+            "msg": "success"
+          }
+        },
+        {
+          "name": "再来一单",
+          "method": "POST",
+          "path": "/user/order/repetition/{id}",
+          "auth": true,
+          "description": "基于历史订单重新下单",
+          "pathParams": {
+            "id": {
+              "type": "number",
+              "required": true,
+              "description": "订单ID"
+            }
+          },
+          "requestExample": "/user/order/repetition/1",
+          "responseExample": {
+            "code": 1,
+            "msg": "success"
+          }
+        },
+        {
+          "name": "催单",
+          "method": "GET",
+          "path": "/user/order/reminder/{id}",
+          "auth": true,
+          "description": "催促商家发货",
+          "pathParams": {
+            "id": {
+              "type": "number",
+              "required": true,
+              "description": "订单ID"
+            }
+          },
+          "requestExample": "/user/order/reminder/1",
+          "responseExample": {
+            "code": 1,
+            "msg": "success"
+          }
+        }
+      ]
+    },
+    {
+      "name": "轮播图模块",
+      "basePath": "/user/banner",
+      "apis": [
+        {
+          "name": "查询轮播图列表",
+          "method": "GET",
+          "path": "/user/banner/list",
+          "auth": true,
+          "description": "获取首页轮播图",
+          "requestParams": {},
+          "response": {
+            "banners": {
+              "type": "array",
+              "items": {
+                "id": "轮播图ID",
+                "imageUrl": "图片URL",
+                "linkUrl": "跳转链接",
+                "sort": "排序",
+                "status": "状态"
+              }
+            }
+          },
+          "responseExample": {
+            "code": 1,
+            "data": {
+              "banners": [
+                {
+                  "id": 1,
+                  "imageUrl": "https://oss.example.com/banner1.jpg",
+                  "linkUrl": "/pages/product/detail?id=1",
+                  "sort": 1,
+                  "status": 1
+                },
+                {
+                  "id": 2,
+                  "imageUrl": "https://oss.example.com/banner2.jpg",
+                  "linkUrl": "/pages/category/list?id=2",
+                  "sort": 2,
+                  "status": 1
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "店铺模块",
+      "basePath": "/user/shop",
+      "apis": [
+        {
+          "name": "获取店铺营业状态",
+          "method": "GET",
+          "path": "/user/shop/status",
+          "auth": false,
+          "description": "查询店铺是否营业",
+          "requestParams": {},
+          "response": {
+            "type": "number",
+            "description": "1=营业中 0=已打样"
+          },
+          "responseExample": {
+            "code": 1,
+            "data": 1
+          }
+        }
+      ]
+    }
+  ],
+  "enums": {
+    "orderStatus": {
+      "0": "待支付",
+      "1": "已支付",
+      "2": "已发货",
+      "3": "已完成"
+    },
+    "shopStatus": {
+      "0": "已打样",
+      "1": "营业中"
+    },
+    "productStatus": {
+      "0": "下架",
+      "1": "上架"
+    }
+  },
+  "errorCodes": {
+    "1": "成功",
+    "0": "失败"
+  },
+  "notes": [
+    "除登录和店铺状态接口外，所有接口都需要在请求头中携带JWT token",
+    "请求头格式: authentication: eyJhbGciOiJIUzI1NiJ9...",
+    "时间格式统一使用: yyyy-MM-dd HH:mm:ss",
+    "金额使用BigDecimal类型，保留两位小数",
+    "分页查询默认page=1, size=20"
+  ]
+}
