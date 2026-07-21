@@ -10,7 +10,7 @@
       
       <view class="header-right">
         <view class="price-box">
-          <text class="price-label">合计</text>
+          <text class="price-label">合计1</text>
           <text class="price-num">¥{{ totalPrice }}</text>
         </view>
         <view class="action-btns">
@@ -59,7 +59,7 @@
           
           <!-- 珠子 -->
           <view
-            v-for="(b, i) in displayBeads"
+            v-for="(b, i) in beads"
             :key="b._id"
             :id="'bead-' + b._id"
             class="bead"
@@ -77,8 +77,6 @@
             :style="getBeadStyle(b, i)"
             :data-index="i"
             @touchstart="onBeadTouchStart(b._id, $event)"
-            @touchmove.stop="onBeadTouchMove(b._id, $event)"
-            @touchend="onBeadTouchEnd(b._id, $event)"
           >
              <image v-if="b.imageUrl && !b.loadFailed" :src="b.imageUrl" mode="aspectFit" class="bead-img" @error="onBeadImageError(b, i)"></image>
              <view v-else class="bead-placeholder" :style="{background: b.color || '#f0f0f0'}"></view>
@@ -97,6 +95,13 @@
         <image v-if="dragOverlayImageUrl" :src="dragOverlayImageUrl" mode="aspectFit" class="bead-img" />
         <view v-else class="bead-placeholder" :style="{background: dragOverlayColor || '#f0f0f0'}" />
       </view>
+
+      <!-- Gap 占位指示器：独立渲染，不参与 v-for，避免拖拽时全量重算布局 -->
+      <view
+        v-show="isDragging && dragTargetSlot >= 0"
+        class="drag-gap-indicator"
+        :style="dragGapStyle"
+      />
 
       <!-- 飞行动画：实物图从商品卡片飞到目标珠子位置（支持多动画并行） -->
       <view
@@ -520,9 +525,6 @@ const showSizeSelector = ref(false)
 
 // 拖拽和交换
 const draggingIndex = ref(-1)
-const isDragging = ref(false)
-const swapMode = ref(false)
-const firstSwapIndex = ref(-1)
 const isAutoArranged = ref(false) // 是否一键排列（均匀分布）
 
 // 弹窗
@@ -675,43 +677,91 @@ const visualRadius = computed(() => {
   return circumferenceRpx / (2 * Math.PI)
 })
 
+// ============================================================
+// 坐标转换体系：屏幕坐标 ↔ 画布坐标
+// ============================================================
+const canvasRect = ref(null)
+const canvasPan = ref({ x: 0, y: 0 })  // 画布单指平移偏移（rpx）
+
+// 屏幕坐标 → 画布 rpx 坐标
+function screenToCanvas(sx, sy) {
+  if (!canvasRect.value) return { x: 0, y: 0 }
+  const r = canvasRect.value
+  const cx = r.left + r.width / 2
+  const cy = r.top + r.height / 2
+  const scale = canvasScale.value || 1
+  const r2p = r.width / 560
+  return {
+    x: (sx - cx) / scale / r2p - canvasPan.value.x,
+    y: (sy - cy) / scale / r2p - canvasPan.value.y
+  }
+}
+
 // 珠子拖动状态 —— 拖拽覆盖层方案
 const dragOverlayVisible = ref(false)
 const dragOverlayImageUrl = ref('')
 const dragOverlayColor = ref('')
-const dragOverlayPos = ref('')          // 覆盖层位置 style（高频更新，独立 ref）
+const dragOverlayPos = ref('')
 const dragBeadData = ref(null)
 const dragTargetSlot = ref(-1)
 const draggingBeadId = ref('')
 const beadTouchStartPos = ref({ x: 0, y: 0 })
+const dragTouchOffset = ref({ x: 0, y: 0 }) // 手指落点与珠子中心的偏移
 const beadTouchActive = ref(false)
-const dragThreshold = 8
-const canvasRect = ref(null)
+const isDragging = ref(false)
+const dragThreshold = 4
+// 拖动时手指当前位置（屏幕坐标），用于把原珠子直接定位到手指位置
+const dragFingerPos = ref({ x: 0, y: 0 })
+// 拖动时画布原点（left/top）与珠子圆心位置的稳定换算结果（touchstart 取一次后不再变）
+const dragCanvasOrigin = ref(null) // {x, y} 画布左上角的屏幕坐标
+const dragBeadCenterInCanvas = ref(null) // {x, y} 被拖珠子在画布坐标系下的中心
+const dragCanvasScale = ref(1) // 画布当前总缩放
+// 被拖珠子在 beads 数组中的原始索引，用于 touchend 时判断是否需要换位
+const dragOriginalIndex = ref(-1)
 
-// 显示用珠子列表（含 gap 占位符）
-const displayBeads = computed(() => {
-  if (!dragOverlayVisible.value || dragTargetSlot.value < 0) return beads.value
-  const gap = {
-    _id: '__gap__',
-    _gap: true,
-    size: dragBeadData.value?.size || 8,
-    color: 'transparent',
-    imageUrl: '',
-    loadFailed: true,
-    price: 0,
-    isNew: false
+// 交换模式
+const swapMode = ref(false)
+const firstSwapIndex = ref(-1)
+
+// 删除撤销
+const lastDeletedBead = ref(null)
+function undoDelete() {
+  if (!lastDeletedBead.value) return
+  const b = lastDeletedBead.value
+  beads.value.splice(Math.min(b.slot, beads.value.length), 0, {
+    _id: b._id, productId: b.productId, title: b.title,
+    price: b.price, size: b.size, color: b.color,
+    imageUrl: b.imageUrl, loadFailed: false, isNew: false
+  })
+  if (b.productId) updateStock(b.productId, -1)
+  lastDeletedBead.value = null
+  vibrate()
+  uni.showToast({ title: '已撤销删除', icon: 'none', duration: 1200 })
+}
+
+// Gap 占位指示器：独立渲染在 v-for 外，不触发 beads/布局全量重算
+const dragGapStyle = computed(() => {
+  if (!isDragging.value || dragTargetSlot.value < 0) return { display: 'none' }
+  const layouts = beadLayouts.value
+  const slot = Math.min(dragTargetSlot.value, layouts.length - 1)
+  const layout = layouts[slot]
+  if (!layout) return { display: 'none' }
+  const size = Number(dragBeadData.value?.size || 8) * 7
+  const radius = layoutRadius.value
+  const cx = 280 + radius * Math.cos(layout.angle) - size / 2
+  const cy = 280 + radius * Math.sin(layout.angle) - size / 2
+  return {
+    left: cx + 'rpx',
+    top: cy + 'rpx',
+    width: size + 'rpx',
+    height: size + 'rpx'
   }
-  const arr = [...beads.value]
-  const slot = Math.min(dragTargetSlot.value, arr.length)
-  arr.splice(slot, 0, gap)
-  return arr
 })
 
 const rawLayoutRadius = computed(() => {
-  const src = displayBeads.value
-  const count = src.length
+  const count = beads.value.length
   if (!count) return visualRadius.value
-  const totalArc = src.reduce((s, b) => s + getBeadArcSizeRpx(b), 0)
+  const totalArc = beads.value.reduce((s, b) => s + getBeadArcSizeRpx(b), 0)
   const minR = totalArc / (2 * Math.PI)
   return Math.max(visualRadius.value, minR)
 })
@@ -733,7 +783,7 @@ watch(selectedSize, () => {
 // 动态缩放画布，确保大尺寸也能完整显示
 const canvasScale = computed(() => {
   const maxR = 250 // 最大安全半径 (留出30rpx边距)
-  const maxBeadSize = displayBeads.value.reduce((m, b) => Math.max(m, getBeadArcSizeRpx(b)), 0)
+  const maxBeadSize = beads.value.reduce((m, b) => Math.max(m, getBeadArcSizeRpx(b)), 0)
   const safeR = layoutRadius.value + maxBeadSize / 2
   
   let autoScale = 1
@@ -745,58 +795,36 @@ const canvasScale = computed(() => {
   return autoScale * manualScale.value
 })
 
-// 计算珠子布局（使用 displayBeads 以反映拖拽时的 gap 占位）
+// 计算珠子布局（基于 beads，gap 指示器独立渲染）
 const beadLayouts = computed(() => {
-  const src = displayBeads.value
+  const src = beads.value
   const count = src.length
   if (!count) return []
-  
+
   const radius = layoutRadius.value
   const layouts = []
-  
-  // 计算所有珠子的总弧长（不含间隙）
+
   let totalBeadArc = 0
-  src.forEach(b => {
-    const s = getBeadArcSizeRpx(b)
-    totalBeadArc += s
-  })
+  src.forEach(b => { totalBeadArc += getBeadArcSizeRpx(b) })
 
-  // 计算圆周长
   const circumference = 2 * Math.PI * radius
-
-  // 确定间隙
-  let gap = 0 // 默认间隙设为0，由 visualRadius 保证不重叠
-  let startAngle = -Math.PI / 2 // 默认从顶部开始
+  let gap = 0
+  let startAngle = -Math.PI / 2
 
   if (isAutoArranged.value) {
-    // 均匀分布模式
     const remainingArc = circumference - totalBeadArc
-
-    // 计算有效间隙数量：只有 珠子-珠子 之间才分配间隙
-    // 吊坠前后都紧贴，不分配间隙
     let validGapCount = 0
-
     if (count > 0) {
-        for (let i = 0; i < count; i++) {
-            const curr = src[i]
-            const next = src[(i + 1) % count]
-            // 如果当前和下一个都不是吊坠，则需要分配间隙
-            if (!isPendant(curr) && !isPendant(next)) {
-                validGapCount++
-            }
-        }
+      for (let i = 0; i < count; i++) {
+        const curr = src[i]
+        const next = src[(i + 1) % count]
+        if (!isPendant(curr) && !isPendant(next)) validGapCount++
+      }
     }
-
-    if (validGapCount > 0) {
-        gap = remainingArc / validGapCount
-    } else {
-        gap = 0
-    }
+    gap = validGapCount > 0 ? remainingArc / validGapCount : 0
   }
 
-  // 布局计算
   let currentAngle = startAngle
-
   for (let i = 0; i < count; i++) {
     if (i === 0) {
       layouts.push({ angle: currentAngle })
@@ -805,20 +833,12 @@ const beadLayouts = computed(() => {
       const currBead = src[i]
       const prevSize = getBeadArcSizeRpx(prevBead)
       const currSize = getBeadArcSizeRpx(currBead)
-      
-      // 判断是否需要添加间隙
-      // 只有当前一个不是吊坠，且当前也不是吊坠时，才应用 gap
       const applyGap = (!isPendant(prevBead) && !isPendant(currBead)) ? gap : 0
-
-      // 累加角度
-      // 使用弧长计算角度：arc = r1 + r2 + gap
       const arc = (prevSize / 2) + (currSize / 2) + applyGap
-      const theta = arc / radius
-      currentAngle += theta
+      currentAngle += arc / radius
       layouts.push({ angle: currentAngle })
     }
   }
-  
   return layouts
 })
 
@@ -861,26 +881,43 @@ function checkCapacity(newItem) {
 // 珠子样式 - 适应动态半径
 function getBeadStyle(bead, index) {
   if (bead._gap) return 'opacity:0;pointer-events:none;'
-  const count = displayBeads.value.length
+  const count = beads.value.length
   if (!count) return ''
-  
-  const layout = beadLayouts.value[index]
-  if (!layout) return ''
-  
+
   const size = Number(bead.size || 8) * 7
-  const radius = layoutRadius.value
-  const angle = layout.angle
-  
-  // 280 是画布中心 (560/2)
-  const pendant = isPendant(bead)
-  const placeRadius = pendant ? (radius + size / 2) : radius
-  const cx = 280 + placeRadius * Math.cos(angle) - size / 2
-  const cy = 280 + placeRadius * Math.sin(angle) - size / 2
-  
-  const rotationDeg = pendant
-    ? (angle - Math.PI / 2) * (180 / Math.PI)
-    : (angle + Math.PI / 2) * (180 / Math.PI)
-  
+  let cx, cy, rotationDeg
+  let isFloating = false
+
+  // 正在被拖动的珠子：直接定位到手指位置（画布坐标系）
+  // 兜底用 canvasRect.value，确保第一帧也能进入"跟随"分支
+  if (isDragging.value && bead._id === draggingBeadId.value && dragFingerPos.value) {
+    const origin = dragCanvasOrigin.value || (canvasRect.value ? { x: canvasRect.value.left, y: canvasRect.value.top } : null)
+    if (origin) {
+      isFloating = true
+      // 手指屏幕坐标 → 画布内 rpx 坐标
+      const fingerXInCanvas = (dragFingerPos.value.x - origin.x) / dragCanvasScale.value
+      const fingerYInCanvas = (dragFingerPos.value.y - origin.y) / dragCanvasScale.value
+      cx = fingerXInCanvas - size / 2 - dragTouchOffset.value.x / dragCanvasScale.value
+      cy = fingerYInCanvas - size / 2 - dragTouchOffset.value.y / dragCanvasScale.value
+      rotationDeg = 0
+    }
+  }
+
+  if (!isFloating) {
+    const layout = beadLayouts.value[index]
+    if (!layout) return ''
+    const radius = layoutRadius.value
+    const angle = layout.angle
+    // 280 是画布中心 (560/2)
+    const pendant = isPendant(bead)
+    const placeRadius = pendant ? (radius + size / 2) : radius
+    cx = 280 + placeRadius * Math.cos(angle) - size / 2
+    cy = 280 + placeRadius * Math.sin(angle) - size / 2
+    rotationDeg = pendant
+      ? (angle - Math.PI / 2) * (180 / Math.PI)
+      : (angle + Math.PI / 2) * (180 / Math.PI)
+  }
+
   let color = bead.color || '#e8e8e8'
   if (color.includes('gradient')) {
     const m = color.match(/#[0-9a-fA-F]{6}/)
@@ -891,11 +928,12 @@ function getBeadStyle(bead, index) {
   if (bead.imageUrl && !bead.loadFailed) {
     color = 'transparent'
   }
-  
-  const scaleX = bead.mirrored ? -1 : 1
-  const zIndex = size >= 168 ? 3 : 10
 
-  return `left:${cx}rpx;top:${cy}rpx;width:${size}rpx;height:${size}rpx;background:${color};transform:rotate(${rotationDeg}deg) scaleX(${scaleX}) scale(1);z-index:${zIndex};`
+  const scaleX = bead.mirrored ? -1 : 1
+  const scale = isFloating ? 1.25 : 1
+  const zIndex = isFloating ? 9999 : (size >= 168 ? 3 : 10)
+
+  return `left:${cx}rpx;top:${cy}rpx;width:${size}rpx;height:${size}rpx;background:${color};transform:rotate(${rotationDeg}deg) scaleX(${scaleX}) scale(${scale});z-index:${zIndex};`
 }
 
 // 切换排列模式
@@ -1062,7 +1100,7 @@ function findBeadIndexById(id) {
   return beads.value.findIndex(b => b._id === id)
 }
 
-// 计算手指对应 displayBeads 中的槽位
+// 计算手指对应 beads 中的插入槽位
 function calcTargetSlot(touch) {
   if (!canvasRect.value) return -1
   const rect = canvasRect.value
@@ -1081,31 +1119,20 @@ function calcTargetSlot(touch) {
     if (diff > Math.PI) diff = 2 * Math.PI - diff
     if (diff < bestDiff) { bestDiff = diff; best = idx }
   })
-  // 如果是 gap 槽位，映射回实际 beads 索引
-  if (best >= 0 && displayBeads.value[best]?._gap) {
-    // gap 所在位置即插入点，返回 gap 之后的实际珠子索引
-    return best
-  }
+  // best 即 beads 中的插入索引
   return best
 }
 
-// 判断触摸点是否在删除区域
+// 判断触摸点是否在底部固定删除热区
 function checkInDeleteZone(touch) {
   if (!canvasRect.value) return false
   const rect = canvasRect.value
-  const centerX = rect.left + rect.width / 2
-  const centerY = rect.top + rect.height / 2
-  const dx = touch.clientX - centerX
-  const dy = touch.clientY - centerY
-  const distance = Math.sqrt(dx * dx + dy * dy)
-  const canvasR = rect.width / 2
-  const r2p = rect.width / 560
-  const ropeR = layoutRadius.value * r2p
-  const deleteR = ropeR + (canvasR - ropeR) * 0.5
-  return distance > deleteR
+  const zoneTop = rect.top + rect.height * 0.82
+  return touch.clientY > zoneTop &&
+    touch.clientX > rect.left && touch.clientX < rect.left + rect.width
 }
 
-// 珠子触摸开始 —— 移除珠子 → 覆盖层接管
+// 珠子触摸开始 —— 记录状态，让原珠子直接跟手
 function onBeadTouchStart(beadId, e) {
   if (beads.value.length < 2) return
   const idx = findBeadIndexById(beadId)
@@ -1128,35 +1155,116 @@ function onBeadTouchStart(beadId, e) {
   const bead = beads.value[idx]
   const touch = e.touches[0]
   beadTouchStartPos.value = { x: touch.clientX, y: touch.clientY }
+  dragFingerPos.value = { x: touch.clientX, y: touch.clientY }
 
-  // 预保存珠子数据
+  // 关键：touchstart 同步兜底赋值，让 getBeadStyle 在第一帧就能正确换算
+  // SelectorQuery 回调是异步的，不能依赖它在 touchmove 第一帧就位
+  if (canvasRect.value) {
+    dragCanvasOrigin.value = { x: canvasRect.value.left, y: canvasRect.value.top }
+  }
+  dragCanvasScale.value = canvasScale.value || 1
+  dragTouchOffset.value = { x: 0, y: 0 }
+
+  // 预保存珠子数据 + 原始索引（用于 touchend 时判断是否需要换位）
   dragBeadData.value = {
     _id: bead._id, size: bead.size, color: bead.color,
     imageUrl: bead.imageUrl, productId: bead.productId,
     price: bead.price, title: bead.title
   }
+  dragOriginalIndex.value = idx
   isDragging.value = false
-
-  // 预初始化覆盖层：图片 URL 提前设置 → 触发图片预解码
-  // 位置预放到画布外（v-show=false 不可见），DOM/GPU 层均已就绪
-  const sz = Number(bead.size || 8) * 7
-  dragOverlayImageUrl.value = bead.imageUrl || ''
-  dragOverlayColor.value = bead.color || '#f0f0f0'
-  dragOverlayPos.value = 'left:0px;top:0px;width:' + sz + 'rpx;height:' + sz + 'rpx'
-  dragOverlayVisible.value = false
   dragTargetSlot.value = -1
 
-  // 更新画布位置并预缓存
+  // 异步精确获取（如果 callback 比 touchmove 晚到，不会卡住；只用来修正 offset）
+  uni.createSelectorQuery().in(instance)
+    .select('.canvas')
+    .boundingClientRect(canvasR => {
+      if (canvasR) {
+        canvasRect.value = canvasR
+        // 只有在尚未开始拖动时才更新 origin，避免在拖动中跳变
+        if (!isDragging.value) {
+          dragCanvasOrigin.value = { x: canvasR.left, y: canvasR.top }
+        }
+      }
+    })
+    .select('#bead-' + beadId)
+    .boundingClientRect(rect => {
+      if (rect && rect.width > 0 && rect.height > 0) {
+        dragTouchOffset.value = {
+          x: touch.clientX - (rect.left + rect.width / 2),
+          y: touch.clientY - (rect.top + rect.height / 2)
+        }
+      }
+    })
+    .exec()
+}
+
+// 非拖动点击珠子 → actionSheet（由 canvas onTouchEnd 调用）
+function handleBeadTap(idx) {
+  if (swapMode.value) return
+  const bead = beads.value[idx]
+  if (!bead) return
+  const mirrorText = bead.mirrored ? '取消镜像' : '镜像翻转'
+  uni.showActionSheet({
+    itemList: ['移除此珠', '调整位置', mirrorText],
+    success: (res) => {
+      if (res.tapIndex === 0) {
+        vibrate(); bead.removing = true
+        setTimeout(() => {
+          const di = beads.value.findIndex(b => b._id === bead._id)
+          if (di >= 0) {
+            const r = beads.value[di]
+            beads.value.splice(di, 1)
+            if (r?.productId) updateStock(r.productId, 1)
+          }
+        }, 250)
+        uni.showToast({ title: '已移除', icon: 'none', duration: 800 })
+      } else if (res.tapIndex === 1) {
+        swapMode.value = true; firstSwapIndex.value = idx
+        vibrate(); uni.showToast({ title: '点击另一颗珠子交换位置', icon: 'none', duration: 1500 })
+      } else if (res.tapIndex === 2) {
+        toggleBeadMirror(idx)
+        vibrate(); uni.showToast({ title: bead.mirrored ? '已取消镜像' : '已镜像', icon: 'none', duration: 800 })
+      }
+    }
+  })
+}
+
+// 珠子触摸结束
+// 画布触摸事件（双指缩放 + 珠子拖动）
+// 珠子拖动的 touchmove/touchend 由画布接管，避免手指移出珠子边界后断触
+function onTouchStart(e) {
   const query = uni.createSelectorQuery().in(instance)
   query.select('.canvas').boundingClientRect(data => {
     if (data) canvasRect.value = data
   }).exec()
+
+  if (e.touches.length === 2) {
+    const t1 = e.touches[0]; const t2 = e.touches[1]
+    const dx = t2.clientX - t1.clientX; const dy = t2.clientY - t1.clientY
+    initialPinchDistance.value = Math.sqrt(dx * dx + dy * dy)
+    startManualScale.value = manualScale.value
+  }
 }
 
-// 珠子触摸移动 —— 覆盖层跟手 + gap 实时移位
-function onBeadTouchMove(beadId, e) {
-  void beadId // 使用 draggingBeadId 替代，保留参数以兼容模板绑定
+function onTouchMove(e) {
+  // 双指缩放优先
+  if (e.touches.length === 2 && initialPinchDistance.value > 0) {
+    const t1 = e.touches[0]; const t2 = e.touches[1]
+    const dx = t2.clientX - t1.clientX; const dy = t2.clientY - t1.clientY
+    const currentDist = Math.sqrt(dx * dx + dy * dy)
+    let newScale = startManualScale.value * (currentDist / initialPinchDistance.value)
+    if (newScale < 0.5) newScale = 0.5
+    if (newScale > 3.0) newScale = 3.0
+    manualScale.value = newScale
+    // 缩放过程中如果正在拖动，更新拖动时使用的画布参数
+    if (isDragging.value) dragCanvasScale.value = newScale
+    return
+  }
+
+  // 珠子拖动：画布接管所有 touchmove，不依赖子元素事件
   if (!beadTouchActive.value || !draggingBeadId.value) return
+  if (e.touches.length !== 1) return
 
   const touch = e.touches[0]
   const dx = touch.clientX - beadTouchStartPos.value.x
@@ -1166,28 +1274,22 @@ function onBeadTouchMove(beadId, e) {
   if (distance > dragThreshold && !isDragging.value) {
     isDragging.value = true
     vibrate()
-    // 覆盖层已预初始化（图片/GPU层就绪），仅需显示 + 定位
-    dragOverlayVisible.value = true
-    const sz = Number(dragBeadData.value?.size || 8) * 7
-    dragOverlayPos.value = 'left:' + touch.clientX + 'px;top:' + touch.clientY + 'px;' +
-      'width:' + sz + 'rpx;height:' + sz + 'rpx'
-    // defer 列表操作到下一帧（首帧仅渲染覆盖层，避免 layout 风暴）
-    const tX = touch.clientX, tY = touch.clientY
-    nextTick(() => {
-      const rmIdx = findBeadIndexById(draggingBeadId.value)
-      if (rmIdx >= 0) beads.value.splice(rmIdx, 1)
-      const slot = calcTargetSlot({ clientX: tX, clientY: tY })
-      dragTargetSlot.value = slot >= 0 ? slot : 0
-    })
+    // 关键：被拖的珠子继续保留在 beads 列表里！
+    // getBeadStyle 通过 draggingBeadId 判定，会把它定位到手指位置。
+    // 这样不会因为 v-for 重渲染造成珠子"消失 → 出现"的卡顿。
+    dragFingerPos.value = { x: touch.clientX, y: touch.clientY }
+    // 同步更新拖拽期间使用的画布参数（兜底）
+    if (!dragCanvasOrigin.value && canvasRect.value) {
+      dragCanvasOrigin.value = { x: canvasRect.value.left, y: canvasRect.value.top }
+      dragCanvasScale.value = canvasScale.value || 1
+    }
+    const slot = calcTargetSlot(touch)
+    dragTargetSlot.value = slot >= 0 ? slot : 0
   }
 
   if (isDragging.value) {
-    // 覆盖层跟手：仅更新坐标和尺寸（静态样式在 CSS 类中）
-    const sz = Number(dragBeadData.value?.size || 8) * 7
-    dragOverlayPos.value = 'left:' + touch.clientX + 'px;top:' + touch.clientY + 'px;' +
-      'width:' + sz + 'rpx;height:' + sz + 'rpx'
-
-    // 槽位和删除区仅变化时更新（避免频繁触发 beadLayouts 重算）
+    // 持续更新手指位置：getBeadStyle 会读取 dragFingerPos 把珠子定位到手指
+    dragFingerPos.value = { x: touch.clientX, y: touch.clientY }
     const slot = calcTargetSlot(touch)
     if (slot >= 0 && slot !== dragTargetSlot.value) {
       dragTargetSlot.value = slot
@@ -1199,83 +1301,54 @@ function onBeadTouchMove(beadId, e) {
   }
 }
 
-// 珠子触摸结束
-function onBeadTouchEnd(beadId, e) {
-  if (!isDragging.value) {
-    // 没有拖动 → 点击显示操作菜单
-    beadTouchActive.value = false
-    draggingBeadId.value = ''
-    dragBeadData.value = null
+function onTouchEnd(e) {
+  if (e.touches.length < 2) {
+    initialPinchDistance.value = 0
+  }
 
-    if (swapMode.value) return
-    const idx = findBeadIndexById(beadId)
-    if (idx < 0) return
-    const bead = beads.value[idx]
-    const mirrorText = bead.mirrored ? '取消镜像' : '镜像翻转'
-    uni.showActionSheet({
-      itemList: ['移除此珠', '调整位置', mirrorText],
-      success: (res) => {
-        if (res.tapIndex === 0) {
-          vibrate(); bead.removing = true
-          setTimeout(() => {
-            const di = beads.value.findIndex(b => b._id === bead._id)
-            if (di >= 0) {
-              const r = beads.value[di]
-              beads.value.splice(di, 1)
-              if (r?.productId) updateStock(r.productId, 1)
-            }
-          }, 250)
-          uni.showToast({ title: '已移除', icon: 'none', duration: 800 })
-        } else if (res.tapIndex === 1) {
-          swapMode.value = true; firstSwapIndex.value = idx
-          vibrate(); uni.showToast({ title: '点击另一颗珠子交换位置', icon: 'none', duration: 1500 })
-        } else if (res.tapIndex === 2) {
-          toggleBeadMirror(idx)
-          vibrate(); uni.showToast({ title: bead.mirrored ? '已取消镜像' : '已镜像', icon: 'none', duration: 800 })
-        }
+  // 珠子拖动结束
+  if (!isDragging.value || !draggingBeadId.value) {
+    // 非拖动 → 可能是点击珠子，触发 actionSheet
+    if (beadTouchActive.value && !isDragging.value) {
+      const idx = findBeadIndexById(draggingBeadId.value)
+      if (idx >= 0) {
+        handleBeadTap(idx)
       }
-    })
+      beadTouchActive.value = false
+      draggingBeadId.value = ''
+      dragBeadData.value = null
+      dragOriginalIndex.value = -1
+    }
     return
   }
 
-  // 拖动结束 —— 插入珠子到目标槽位
+  // 拖动结束 - 珠子一直在 beads 列表里，这里只做"换位 / 删除"决定
   const data = dragBeadData.value
   const slot = dragTargetSlot.value
+  const origIdx = dragOriginalIndex.value
+  const currentIdx = findBeadIndexById(draggingBeadId.value)
 
   if (isInDeleteZone.value) {
-    // 拖到删除区 → 丢弃珠子，恢复库存
+    // 删除：splice 移除 + 库存 + 撤销记录
+    if (currentIdx >= 0) beads.value.splice(currentIdx, 1)
     if (data?.productId) updateStock(data.productId, 1)
-    uni.showToast({ title: '已删除', icon: 'none', duration: 800 })
-  } else if (data && slot >= 0) {
-    // 插入珠子到目标位置
-    const bead = {
-      _id: data._id,
-      productId: data.productId,
-      title: data.title,
-      price: data.price,
-      size: data.size,
-      color: data.color,
-      imageUrl: data.imageUrl,
-      loadFailed: false,
-      isNew: false,
-      _justPlaced: true
-    }
-    beads.value.splice(Math.min(slot, beads.value.length), 0, bead)
+    lastDeletedBead.value = { ...data, slot: origIdx }
+    uni.showToast({ title: '已删除（可撤销）', icon: 'none', duration: 3000 })
+    setTimeout(() => { lastDeletedBead.value = null }, 5000)
+  } else if (data && currentIdx >= 0 && slot >= 0 && slot !== origIdx) {
+    // 换位：从原位置 splice 出来，插入到新位置
+    const [bead] = beads.value.splice(currentIdx, 1)
+    // 注意：splice 后索引会变化，需要校正
+    const insertIdx = slot > currentIdx ? slot - 1 : slot
+    bead._justPlaced = true
+    beads.value.splice(Math.min(insertIdx, beads.value.length), 0, bead)
     vibrate()
     setTimeout(() => {
       const b = beads.value.find(x => x._id === data._id)
       if (b) b._justPlaced = false
     }, 400)
-  } else {
-    // 回退：放回原位置
-    if (data) {
-      beads.value.splice(Math.min(slot >= 0 ? slot : 0, beads.value.length), 0, {
-        _id: data._id, productId: data.productId, title: data.title,
-        price: data.price, size: data.size, color: data.color,
-        imageUrl: data.imageUrl, loadFailed: false, isNew: false
-      })
-    }
   }
+  // slot === origIdx 或不在画布内：原位不动，珠子自然回到 layout 位置
 
   // 清理
   dragOverlayVisible.value = false
@@ -1288,55 +1361,12 @@ function onBeadTouchEnd(beadId, e) {
   draggingBeadId.value = ''
   dragBeadData.value = null
   dragTargetSlot.value = -1
-
-  setTimeout(() => { beadTouchActive.value = false }, 100)
-}
-
-// 珠子触摸结束
-// 画布触摸事件（处理双指缩放）
-function onTouchStart(e) {
-  // 更新画布位置
-  const query = uni.createSelectorQuery().in(instance)
-  query.select('.canvas').boundingClientRect(data => {
-    if (data) canvasRect.value = data
-  }).exec()
-
-  // 双指缩放
-  if (e.touches.length === 2) {
-    const t1 = e.touches[0]
-    const t2 = e.touches[1]
-    const dx = t2.clientX - t1.clientX
-    const dy = t2.clientY - t1.clientY
-    initialPinchDistance.value = Math.sqrt(dx * dx + dy * dy)
-    startManualScale.value = manualScale.value
-    return
-  }
-}
-
-function onTouchMove(e) {
-  // 双指缩放
-  if (e.touches.length === 2 && initialPinchDistance.value > 0) {
-    const t1 = e.touches[0]
-    const t2 = e.touches[1]
-    const dx = t2.clientX - t1.clientX
-    const dy = t2.clientY - t1.clientY
-    const currentDist = Math.sqrt(dx * dx + dy * dy)
-
-    const scaleRatio = currentDist / initialPinchDistance.value
-    let newScale = startManualScale.value * scaleRatio
-
-    if (newScale < 0.5) newScale = 0.5
-    if (newScale > 3.0) newScale = 3.0
-
-    manualScale.value = newScale
-    return
-  }
-}
-
-function onTouchEnd(e) {
-  if (e.touches.length < 2) {
-    initialPinchDistance.value = 0
-  }
+  dragOriginalIndex.value = -1
+  dragTouchOffset.value = { x: 0, y: 0 }
+  dragFingerPos.value = { x: 0, y: 0 }
+  dragCanvasOrigin.value = null
+  dragBeadCenterInCanvas.value = null
+  beadTouchActive.value = false
 }
 
 // 辅助功能
@@ -2095,6 +2125,15 @@ onMounted(() => {
   console.log('Design Page Mounted')
   isMounted.value = true
   ensureInit()
+  // 预先缓存画布位置，避免首次拖动第一帧没有 canvasRect
+  nextTick(() => {
+    uni.createSelectorQuery().in(instance)
+      .select('.canvas')
+      .boundingClientRect(data => {
+        if (data) canvasRect.value = data
+      })
+      .exec()
+  })
 })
 
 onShow(() => {
@@ -2605,10 +2644,11 @@ onShow(() => {
   }
 
   &.is-dragging {
-    transform: scale(1.25) !important;
-    z-index: 999 !important;
+    /* 拖拽中的视觉态：style 上的 transform 已经包含 scale(1.25)，这里不再覆盖 */
+    z-index: 9999 !important;
     filter: drop-shadow(0 12rpx 24rpx rgba(0,0,0,0.3));
     transition: none;
+    will-change: left, top, transform;
   }
 
   &.is-drag-target {
@@ -2685,6 +2725,7 @@ onShow(() => {
   border-radius: 50%;
   transform: translate(-50%, -50%) scale(1.25);
   transition: none;
+  will-change: transform, left, top;
   box-shadow: 0 8rpx 32rpx rgba(0,0,0,0.3);
   overflow: hidden;
 }
@@ -2698,6 +2739,16 @@ onShow(() => {
   width: 100%;
   height: 100%;
   border-radius: 50%;
+}
+
+/* Gap 占位指示器：显示珠子将要插入的位置 */
+.drag-gap-indicator {
+  position: absolute;
+  border-radius: 50%;
+  border: 3rpx dashed rgba(212, 165, 116, 0.6);
+  background: rgba(212, 165, 116, 0.1);
+  z-index: 8;
+  pointer-events: none;
 }
 
 /* 飞跃特效：原图从卡片飞到画布 */
