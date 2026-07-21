@@ -519,6 +519,15 @@ export function createDiyOrder(data) {
   return post(API_PATHS.DIY_ORDER_CREATE, data)
 }
 
+/**
+ * 后端合成 DIY 设计图（替代浏览器 canvas 生成，避免不同设备的缩放/偏移问题）
+ * @param {Object} spec 渲染规格 { size, rope, logo, beads[] }
+ * @returns {Promise} { path, url }
+ */
+export function designRender(spec) {
+  return post('/guest/design/render', spec, false, 30000)
+}
+
 // ==================== 导出兼容旧代码的函数名 ====================
 
 // 轮播图
